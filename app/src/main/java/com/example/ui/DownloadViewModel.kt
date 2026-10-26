@@ -220,12 +220,14 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun linkTelegram(
-        fullName: String,
-        telegramId: String = "ID: 618492041",
+        fullName: String = "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
+        username: String = "@jakudoshy",
+        telegramId: String = "618492041",
+        photoUrl: String? = null,
         balance: String = "$ 150.00 CUP",
         quotaPlan: String = "Plan Premium Ultra (Sin Límite)"
     ) {
-        settingsRepository.linkTelegram(fullName, telegramId, balance, quotaPlan)
+        settingsRepository.linkTelegram(fullName, username, telegramId, photoUrl, balance, quotaPlan)
     }
 
     fun unlinkTelegram() {

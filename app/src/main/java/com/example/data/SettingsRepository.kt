@@ -39,26 +39,36 @@ class SettingsRepository(context: Context) {
 
     private fun loadUserProfile(): UserProfile {
         val isLinked = prefs.getBoolean("user_is_linked", false)
+        val savedCode = prefs.getString("user_link_code", null) ?: run {
+            val generated = "JK-${(100000..999999).random()}"
+            prefs.edit().putString("user_link_code", generated).apply()
+            generated
+        }
+
         return if (isLinked) {
             UserProfile(
                 isLinked = true,
                 fullName = prefs.getString("user_full_name", "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ") ?: "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
+                username = prefs.getString("user_username", "@jakudoshy") ?: "@jakudoshy",
                 telegramId = prefs.getString("user_telegram_id", "ID: 618492041") ?: "ID: 618492041",
+                photoUrl = prefs.getString("user_photo_url", null),
                 accountStatus = prefs.getString("user_account_status", "Verificado VIP · Activo") ?: "Verificado VIP · Activo",
                 balance = prefs.getString("user_balance", "$ 150.00 CUP") ?: "$ 150.00 CUP",
                 quotaPlan = prefs.getString("user_quota_plan", "Plan Premium Ultra (Sin Límite)") ?: "Plan Premium Ultra (Sin Límite)",
-                linkCode = prefs.getString("user_link_code", "JK-SYNCED") ?: "JK-SYNCED",
+                linkCode = savedCode,
                 linkedDate = prefs.getString("user_linked_date", "26 Oct 2026") ?: "26 Oct 2026"
             )
         } else {
             UserProfile(
                 isLinked = false,
                 fullName = "Modo Invitado",
+                username = "",
                 telegramId = "No Vinculado",
-                accountStatus = "Cuenta Invitado",
+                photoUrl = null,
+                accountStatus = "Modo Invitado",
                 balance = "$ 0.00 CUP",
                 quotaPlan = "Plan Estándar",
-                linkCode = prefs.getString("user_link_code", "JK-7492") ?: "JK-7492",
+                linkCode = savedCode,
                 linkedDate = ""
             )
         }
@@ -89,7 +99,9 @@ class SettingsRepository(context: Context) {
         prefs.edit().apply {
             putBoolean("user_is_linked", profile.isLinked)
             putString("user_full_name", profile.fullName)
+            putString("user_username", profile.username)
             putString("user_telegram_id", profile.telegramId)
+            putString("user_photo_url", profile.photoUrl)
             putString("user_account_status", profile.accountStatus)
             putString("user_balance", profile.balance)
             putString("user_quota_plan", profile.quotaPlan)
@@ -101,33 +113,42 @@ class SettingsRepository(context: Context) {
     }
 
     fun unlinkTelegram() {
+        val newCode = "JK-${(100000..999999).random()}"
         val guest = UserProfile(
             isLinked = false,
             fullName = "Modo Invitado",
+            username = "",
             telegramId = "No Vinculado",
-            accountStatus = "Cuenta Invitado",
+            photoUrl = null,
+            accountStatus = "Modo Invitado",
             balance = "$ 0.00 CUP",
             quotaPlan = "Plan Estándar",
-            linkCode = "JK-${(1000..9999).random()}",
+            linkCode = newCode,
             linkedDate = ""
         )
         updateProfile(guest)
     }
 
     fun linkTelegram(
-        fullName: String,
-        telegramId: String = "ID: 618492041",
+        fullName: String = "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
+        username: String = "@jakudoshy",
+        telegramId: String = "618492041",
+        photoUrl: String? = null,
         balance: String = "$ 150.00 CUP",
         quotaPlan: String = "Plan Premium Ultra (Sin Límite)"
     ) {
+        val curCode = _userProfile.value.linkCode
+        val cleanUser = if (username.startsWith("@") || username.isBlank()) username else "@$username"
         val linked = UserProfile(
             isLinked = true,
             fullName = fullName.ifBlank { "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ" },
+            username = cleanUser.ifBlank { "@jakudoshy" },
             telegramId = if (telegramId.startsWith("ID:")) telegramId else "ID: $telegramId",
+            photoUrl = photoUrl,
             accountStatus = "Verificado VIP · Activo",
             balance = balance,
             quotaPlan = quotaPlan,
-            linkCode = "JK-SYNCED",
+            linkCode = curCode,
             linkedDate = "26 Oct 2026"
         )
         updateProfile(linked)

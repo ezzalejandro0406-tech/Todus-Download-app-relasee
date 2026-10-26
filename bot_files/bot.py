@@ -3271,16 +3271,19 @@ async def ensure_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 
-def link_user_app(token: str, user_id: int, full_name: str, username: str | None) -> dict:
+def link_user_app(token: str, user_id: int, full_name: str, username: str | None, photo_url: str | None = None) -> dict:
     code = token.strip().upper()
     data = _load_json(APP_LINKS_FILE)
     if not isinstance(data, dict):
         data = {}
     balance = get_user_balance(user_id)
+    user_handle = f"@{username}" if username else ""
     data[code] = {
         "user_id": user_id,
         "name": full_name or "Usuario Verificado JK",
+        "username": user_handle,
         "telegram_id": str(user_id),
+        "photo_url": photo_url,
         "status": "Verificado VIP · Activo",
         "balance": f"{balance}$ CUP",
         "quota_plan": "Plan Premium Ultra (Sin Límite)",
@@ -3319,24 +3322,44 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Detección de token de vinculación desde la app JK Downloader
         if first_arg.upper().startswith("JK") or first_arg.upper().startswith("LINK_JK") or first_arg.upper().startswith("APP_"):
             token_code = first_arg.upper()
-            link_user_app(token_code, user.id, getattr(user, "full_name", "") or getattr(user, "first_name", ""), getattr(user, "username", None))
+            avatar_url = None
+            try:
+                photos = await context.bot.get_user_profile_photos(user.id, limit=1)
+                if photos.total_count > 0:
+                    photo_file = await context.bot.get_file(photos.photos[0][-1].file_id)
+                    avatar_url = photo_file.file_path
+            except Exception:
+                pass
+
+            link_user_app(
+                token_code,
+                user.id,
+                getattr(user, "full_name", "") or getattr(user, "first_name", ""),
+                getattr(user, "username", None),
+                photo_url=avatar_url
+            )
             user_balance = get_user_balance(user.id)
+            user_handle = f"@{user.username}" if user.username else ""
             link_lines = [
                 f"👤 ɴᴏᴍʙʀᴇ: {getattr(user, 'full_name', '') or getattr(user, 'first_name', '')}",
                 f"🆔 ɪᴅ ᴛᴇʟᴇɢʀᴀᴍ: {{mono:{user.id}}}",
+            ]
+            if user_handle:
+                link_lines.append(f"🔗 ᴜꜱᴜᴀʀɪᴏ: {user_handle}")
+            link_lines.extend([
                 "🛡️ ᴇꜱᴛᴀᴅᴏ: ᴠᴇʀɪꜰɪᴄᴀᴅᴏ ᴠɪᴘ · ᴀᴄᴛɪᴠᴏ",
                 f"💳 ꜱᴀʟᴅᴏ ᴇɴ ᴄᴜᴇɴᴛᴀ: {user_balance}$ ᴄᴜᴘ",
                 "⚡ ᴘʟᴀɴ ᴅᴇ ᴅᴇꜱᴄᴀʀɢᴀ: ɪʟɪᴍɪᴛᴀᴅᴏ ᴜʟᴛʀᴀ",
                 f"🔑 ᴄóᴅɪɢᴏ: {{mono:{token_code}}}",
                 "",
-                "✅ ¡CUENTA VINCULADA Y VERIFICADA CON ÉXITO!",
-                "📲 Ya puedes volver a la aplicación JK Downloader.",
-                "☁️ Tu perfil oficial y descargas en la nube",
-                "   quedan sincronizadas con tu cuenta.",
+                "✅ ¡TU SOLICITUD ESTÁ VERIFICADA CON ÉXITO!",
+                "📲 Ya puedes volver a la aplicación.",
+                "✨ Tu foto de perfil, usuario @ y estado",
+                "   quedan sincronizados en JK Downloader.",
                 "",
                 "🚀 ᴍᴏᴅ ʙʏ ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
                 "📢 ᴄᴀɴᴀʟ: t.me/gg_no_rot"
-            ]
+            ])
             await update.effective_message.reply_text(
                 card("⚡ ᴠɪɴᴄᴜʟᴀᴄɪóɴ ᴊᴋ ᴅᴏᴡɴʟᴏᴀᴅᴇʀ", link_lines),
                 reply_markup=InlineKeyboardMarkup([

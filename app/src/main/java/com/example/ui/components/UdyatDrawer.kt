@@ -112,19 +112,40 @@ fun UdyatDrawerContent(
                             modifier = Modifier.size(54.dp),
                             contentAlignment = Alignment.BottomEnd
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_jk_brand),
-                                contentDescription = "Avatar JK",
-                                modifier = Modifier
-                                    .size(54.dp)
-                                    .clip(CircleShape)
-                                    .border(
-                                        2.dp,
-                                        if (userProfile.isLinked) StatusGreen else accentColor,
-                                        CircleShape
-                                    )
-                            )
                             if (userProfile.isLinked) {
+                                // Foto de perfil del usuario que vinculó
+                                if (!userProfile.photoUrl.isNullOrEmpty()) {
+                                    coil.compose.AsyncImage(
+                                        model = userProfile.photoUrl,
+                                        contentDescription = "Foto de perfil usuario",
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(CircleShape)
+                                            .border(2.dp, StatusGreen, CircleShape)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(Color(0xFF229ED9), Color(0xFF00E676))
+                                                )
+                                            )
+                                            .border(2.dp, StatusGreen, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = userProfile.fullName.firstOrNull()?.toString() ?: "J",
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .size(18.dp)
@@ -140,6 +161,20 @@ fun UdyatDrawerContent(
                                         modifier = Modifier.size(12.dp)
                                     )
                                 }
+                            } else {
+                                // Foto de JK Downloader para invitado
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_jk_brand),
+                                    contentDescription = "Avatar JK Downloader",
+                                    modifier = Modifier
+                                        .size(54.dp)
+                                        .clip(CircleShape)
+                                        .border(
+                                            2.dp,
+                                            accentColor,
+                                            CircleShape
+                                        )
+                                )
                             }
                         }
 
@@ -157,12 +192,23 @@ fun UdyatDrawerContent(
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             if (userProfile.isLinked) {
-                                Text(
-                                    text = userProfile.telegramId,
-                                    fontSize = 11.sp,
-                                    color = StatusCyan,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (userProfile.username.isNotBlank()) {
+                                        Text(
+                                            text = userProfile.username,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF29B6F6),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Text(
+                                        text = userProfile.telegramId,
+                                        fontSize = 11.sp,
+                                        color = StatusCyan,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             } else {
                                 Text(
                                     text = "Toca para vincular con @downfree_jk_bot",

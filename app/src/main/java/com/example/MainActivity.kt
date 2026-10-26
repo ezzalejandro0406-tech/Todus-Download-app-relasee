@@ -603,8 +603,8 @@ fun MainAppScreen(
     if (isTelegramLinkDialogOpen) {
         TelegramLinkDialog(
             userProfile = userProfile,
-            onLink = { fullName, telegramId, balance, quotaPlan ->
-                viewModel.linkTelegram(fullName, telegramId, balance, quotaPlan)
+            onLinkSuccess = { fullName, username, telegramId, photoUrl ->
+                viewModel.linkTelegram(fullName, username, telegramId, photoUrl)
             },
             onUnlink = { viewModel.unlinkTelegram() },
             onDismiss = { isTelegramLinkDialogOpen = false }
