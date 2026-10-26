@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">toDus Download</string>
+    <string name="tab_active">Activas</string>
+    <string name="tab_completed">Finalizadas</string>
+    <string name="tab_settings">Ajustes</string>
+    <string name="new_download_title">Nueva Descarga</string>
+    <string name="paste_url_hint">Pega enlace de toDus o enlace directo…</string>
+    <string name="start_download">Descargar</string>
+    <string name="pause">Pausar</string>
+    <string name="resume">Reanudar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="retry">Reintentar</string>
+    <string name="open_file">Abrir</string>
+    <string name="delete">Eliminar</string>
+    <string name="threads">Hilos</string>
+    <string name="speed">Velocidad</string>
+    <string name="auto_reconnect">Reconexión automática</string>
+    <string name="reconnecting_msg">Reconectando a la red…</string>
+</resources>

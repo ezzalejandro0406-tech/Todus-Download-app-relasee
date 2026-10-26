@@ -1,0 +1,6 @@
+{
+  "name": "toDus Download",
+  "description": "Descargador multihilo de alta velocidad para toDus y enlaces directos con reconexión automática, turbo hilos y tema rojo radiante neón.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
