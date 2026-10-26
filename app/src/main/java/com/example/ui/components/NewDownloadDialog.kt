@@ -3,7 +3,6 @@ package com.example.ui.components
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Link
@@ -31,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,15 +41,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.ui.theme.NeonRedBright
-import com.example.ui.theme.NeonRedCardBorder
-import com.example.ui.theme.NeonRedContainer
-import com.example.ui.theme.NeonRedDarkSurface
-import com.example.ui.theme.NeonRedDarkSurfaceVariant
-import com.example.ui.theme.NeonRedPrimary
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.AccentRed
+import com.example.ui.theme.AccentRedContainer
+import com.example.ui.theme.DarkCardBorder
+import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.TextDarkGray
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextWhite
 
 @Composable
 fun NewDownloadDialog(
@@ -62,21 +58,15 @@ fun NewDownloadDialog(
     onConfirm: (url: String, threads: Int) -> Unit
 ) {
     var urlText by remember { mutableStateOf(initialUrl) }
-    var selectedThreads by remember { mutableIntStateOf(defaultThreads) }
     val context = LocalContext.current
 
-    val threadPresets = listOf(
-        4 to "Normal (4)",
-        8 to "Rápido (8)",
-        16 to "Turbo (16)",
-        32 to "Ultra (32)"
-    )
+    val isTodusLink = urlText.isBlank() || urlText.contains("todus.cu") || urlText.startsWith("http://") || urlText.startsWith("https://")
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = NeonRedDarkSurface,
-            border = androidx.compose.foundation.BorderStroke(1.5.dp, NeonRedPrimary),
+            shape = RoundedCornerShape(16.dp),
+            color = DarkSurface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -84,56 +74,54 @@ fun NewDownloadDialog(
                     .fillMaxWidth()
                     .padding(20.dp)
             ) {
-                // Dialog Title
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(NeonRedContainer),
+                            .background(AccentRedContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Download,
                             contentDescription = null,
-                            tint = NeonRedBright,
+                            tint = AccentRed,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Nueva Descarga",
+                        text = "Nueva descarga",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = TextWhite
                     )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Input URL Field
                 OutlinedTextField(
                     value = urlText,
                     onValueChange = { urlText = it },
                     placeholder = {
                         Text(
-                            text = "https://... enlace de toDus o directo",
+                            text = "Pega un enlace de toDus.",
                             fontSize = 13.sp,
-                            color = TextMuted
+                            color = TextDarkGray
                         )
                     },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Link,
                             contentDescription = null,
-                            tint = NeonRedBright
+                            tint = AccentRed
                         )
                     },
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.Default.ContentPaste,
                             contentDescription = "Pegar",
-                            tint = TextSecondary,
+                            tint = TextGray,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .clickable {
@@ -148,76 +136,32 @@ fun NewDownloadDialog(
                         )
                     },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonRedPrimary,
-                        unfocusedBorderColor = NeonRedCardBorder,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = NeonRedPrimary,
-                        focusedContainerColor = NeonRedDarkSurfaceVariant,
-                        unfocusedContainerColor = NeonRedDarkSurfaceVariant
+                        focusedBorderColor = AccentRed,
+                        unfocusedBorderColor = DarkCardBorder,
+                        focusedTextColor = TextWhite,
+                        unfocusedTextColor = TextWhite,
+                        cursorColor = AccentRed,
+                        focusedContainerColor = DarkSurfaceVariant,
+                        unfocusedContainerColor = DarkSurfaceVariant
                     ),
                     maxLines = 3,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("url_input_field")
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Threads selection
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Bolt,
-                        contentDescription = null,
-                        tint = NeonRedBright,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
+                if (urlText.isNotBlank() && !isTodusLink) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Hilos de descarga paralelos:",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextSecondary
+                        text = "Solo se admiten enlaces de toDus.",
+                        fontSize = 11.sp,
+                        color = AccentRed
                     )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Preset Pills
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    threadPresets.forEach { (threads, label) ->
-                        val isSelected = selectedThreads == threads
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) NeonRedPrimary else NeonRedDarkSurfaceVariant)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) NeonRedBright else NeonRedCardBorder,
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .clickable { selectedThreads = threads }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "$threads H",
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Normal,
-                                color = if (isSelected) TextPrimary else TextSecondary
-                            )
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Actions Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -226,7 +170,7 @@ fun NewDownloadDialog(
                     TextButton(onClick = onDismiss) {
                         Text(
                             text = "Cancelar",
-                            color = TextSecondary,
+                            color = TextGray,
                             fontSize = 14.sp
                         )
                     }
@@ -236,23 +180,17 @@ fun NewDownloadDialog(
                     Button(
                         onClick = {
                             if (urlText.isNotBlank()) {
-                                onConfirm(urlText.trim(), selectedThreads)
+                                onConfirm(urlText.trim(), defaultThreads)
                             }
                         },
                         enabled = urlText.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonRedPrimary,
-                            contentColor = TextPrimary
+                            containerColor = AccentRed,
+                            contentColor = TextWhite
                         ),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.testTag("confirm_download_button")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Descargar",
                             fontWeight = FontWeight.Bold,

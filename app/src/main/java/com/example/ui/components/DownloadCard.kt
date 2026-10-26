@@ -34,18 +34,23 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,16 +58,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.DownloadEntity
 import com.example.model.DownloadStatus
-import com.example.ui.theme.NeonGreenSuccess
-import com.example.ui.theme.NeonOrangeWarning
-import com.example.ui.theme.NeonRedBright
-import com.example.ui.theme.NeonRedCardBorder
-import com.example.ui.theme.NeonRedContainer
-import com.example.ui.theme.NeonRedDarkSurfaceVariant
-import com.example.ui.theme.NeonRedPrimary
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.AccentRed
+import com.example.ui.theme.AccentRedContainer
+import com.example.ui.theme.DarkCardBorder
+import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.StatusGreen
+import com.example.ui.theme.StatusOrange
+import com.example.ui.theme.TextDarkGray
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextWhite
 
 @Composable
 fun DownloadCard(
@@ -77,11 +82,13 @@ fun DownloadCard(
     onClick: (DownloadEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showCancelDialog by remember { mutableStateOf(false) }
+
     val isDownloading = item.status == DownloadStatus.DOWNLOADING
     val isReconnecting = item.status == DownloadStatus.RECONNECTING
     val isCompleted = item.status == DownloadStatus.COMPLETED
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val infiniteTransition = rememberInfiniteTransition(label = "spin")
     val spinRotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -91,11 +98,41 @@ fun DownloadCard(
         label = "spin"
     )
 
-    val borderColor = when {
-        isDownloading -> NeonRedPrimary
-        isReconnecting -> NeonOrangeWarning
-        isCompleted -> NeonGreenSuccess.copy(alpha = 0.6f)
-        else -> NeonRedCardBorder
+    if (showCancelDialog) {
+        AlertDialog(
+            onDismissRequest = { showCancelDialog = false },
+            title = {
+                Text(
+                    text = "¿Cancelar descarga?",
+                    fontWeight = FontWeight.Bold,
+                    color = TextWhite
+                )
+            },
+            text = {
+                Text(
+                    text = "Se quitan de la cola y se borra lo que ya se había descargado.",
+                    color = TextGray
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCancelDialog = false
+                        onCancel(item.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                ) {
+                    Text("Cancelar descarga", color = TextWhite)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCancelDialog = false }) {
+                    Text("Seguir", color = TextGray)
+                }
+            },
+            containerColor = DarkSurface,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 
     NeonCard(
@@ -103,299 +140,228 @@ fun DownloadCard(
             .fillMaxWidth()
             .testTag("download_card_${item.id}")
             .clickable { onClick(item) },
-        borderColor = borderColor,
-        borderWidth = if (isDownloading || isReconnecting) 1.5.dp else 1.dp
+        borderColor = when {
+            isDownloading -> AccentRed.copy(alpha = 0.5f)
+            isReconnecting -> StatusOrange.copy(alpha = 0.5f)
+            isCompleted -> StatusGreen.copy(alpha = 0.4f)
+            else -> DarkCardBorder
+        },
+        containerColor = DarkSurface
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp)
         ) {
-            // Header Row: Icon + Filename + Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // File Type Icon
-                val (fileIcon, iconColor) = when {
-                    item.isApk -> Icons.Default.Android to NeonRedBright
-                    item.isVideo -> Icons.Default.VideoFile to Color(0xFF00E5FF)
-                    item.isAudio -> Icons.Default.AudioFile to Color(0xFFFFD54F)
-                    item.isArchive -> Icons.Default.FolderZip to Color(0xFFFF7043)
-                    else -> Icons.Default.InsertDriveFile to TextSecondary
+                val fileIcon = when {
+                    item.isApk -> Icons.Default.Android
+                    item.isVideo -> Icons.Default.VideoFile
+                    item.isAudio -> Icons.Default.AudioFile
+                    item.isArchive -> Icons.Default.FolderZip
+                    else -> Icons.Default.InsertDriveFile
                 }
 
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(40.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(NeonRedDarkSurfaceVariant),
+                        .background(DarkSurfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = fileIcon,
-                        contentDescription = "Archivo",
-                        tint = iconColor,
-                        modifier = Modifier.size(24.dp)
+                        contentDescription = null,
+                        tint = if (isCompleted) StatusGreen else AccentRed,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Title + Subtitle
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = item.fileName,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextWhite,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Status badge
-                        when (item.status) {
-                            DownloadStatus.DOWNLOADING -> {
+
+                    when (item.status) {
+                        DownloadStatus.DOWNLOADING -> {
+                            val speedText = if (item.speedBytesPerSec > 0) item.formattedSpeed else "Calculando velocidad…"
+                            Text(
+                                text = "Descargando · $speedText · ${item.threadsCount} hilos",
+                                fontSize = 12.sp,
+                                color = AccentRed
+                            )
+                        }
+                        DownloadStatus.RECONNECTING -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = null,
+                                    tint = StatusOrange,
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .rotate(spinRotation)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Descargando • ${item.formattedSpeed}",
+                                    text = "Reconectando (${item.reconnectAttempt})…",
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = NeonRedBright
+                                    color = StatusOrange
                                 )
                             }
-                            DownloadStatus.RECONNECTING -> {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Sync,
-                                        contentDescription = null,
-                                        tint = NeonOrangeWarning,
-                                        modifier = Modifier
-                                            .size(12.dp)
-                                            .rotate(spinRotation)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Reconectando (${item.reconnectAttempt})…",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = NeonOrangeWarning
-                                    )
-                                }
-                            }
-                            DownloadStatus.PAUSED -> {
-                                Text(
-                                    text = "En pausa",
-                                    fontSize = 12.sp,
-                                    color = TextMuted
-                                )
-                            }
-                            DownloadStatus.COMPLETED -> {
-                                Text(
-                                    text = "Completado • ${item.formattedSize}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = NeonGreenSuccess
-                                )
-                            }
-                            DownloadStatus.FAILED -> {
-                                Text(
-                                    text = item.errorMsg ?: "Error de red",
-                                    fontSize = 12.sp,
-                                    color = NeonRedBright,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            DownloadStatus.QUEUED -> {
-                                Text(
-                                    text = "En cola",
-                                    fontSize = 12.sp,
-                                    color = TextMuted
-                                )
-                            }
+                        }
+                        DownloadStatus.PAUSED -> {
+                            Text(text = "En pausa", fontSize = 12.sp, color = TextDarkGray)
+                        }
+                        DownloadStatus.COMPLETED -> {
+                            Text(text = "Descarga completada · ${item.formattedSize}", fontSize = 12.sp, color = StatusGreen)
+                        }
+                        DownloadStatus.FAILED -> {
+                            Text(text = item.errorMsg ?: "La descarga falló", fontSize = 12.sp, color = AccentRed)
+                        }
+                        DownloadStatus.QUEUED -> {
+                            Text(text = "En cola", fontSize = 12.sp, color = TextDarkGray)
                         }
                     }
                 }
 
-                // Action Buttons
+                // Control buttons
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     when (item.status) {
                         DownloadStatus.DOWNLOADING, DownloadStatus.RECONNECTING -> {
                             IconButton(
                                 onClick = { onPause(item.id) },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedContainer)
+                                    .background(DarkSurfaceVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Pause,
-                                    contentDescription = "Pausar",
-                                    tint = TextPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Pause, contentDescription = "Pausar", tint = TextWhite, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             IconButton(
-                                onClick = { onCancel(item.id) },
+                                onClick = { showCancelDialog = true },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedDarkSurfaceVariant)
+                                    .background(DarkSurfaceVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Cancelar",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Close, contentDescription = "Cancelar", tint = TextGray, modifier = Modifier.size(18.dp))
                             }
                         }
                         DownloadStatus.PAUSED -> {
                             IconButton(
                                 onClick = { onResume(item.id) },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedContainer)
+                                    .background(AccentRedContainer)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Reanudar",
-                                    tint = NeonRedBright,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Reanudar", tint = AccentRed, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             IconButton(
-                                onClick = { onCancel(item.id) },
+                                onClick = { showCancelDialog = true },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedDarkSurfaceVariant)
+                                    .background(DarkSurfaceVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Cancelar",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Close, contentDescription = "Cancelar", tint = TextGray, modifier = Modifier.size(18.dp))
                             }
                         }
                         DownloadStatus.FAILED -> {
                             IconButton(
                                 onClick = { onRetry(item.id) },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedContainer)
+                                    .background(AccentRedContainer)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Reintentar",
-                                    tint = NeonRedBright,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Refresh, contentDescription = "Reintentar", tint = AccentRed, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             IconButton(
                                 onClick = { onDelete(item.id) },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedDarkSurfaceVariant)
+                                    .background(DarkSurfaceVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Eliminar",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = TextGray, modifier = Modifier.size(18.dp))
                             }
                         }
                         DownloadStatus.COMPLETED -> {
                             IconButton(
                                 onClick = { onOpen(item) },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonGreenSuccess.copy(alpha = 0.2f))
+                                    .background(StatusGreen.copy(alpha = 0.15f))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.OpenInNew,
-                                    contentDescription = "Abrir",
-                                    tint = NeonGreenSuccess,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.OpenInNew, contentDescription = "Abrir", tint = StatusGreen, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             IconButton(
                                 onClick = { onShare(item) },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedDarkSurfaceVariant)
+                                    .background(DarkSurfaceVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = "Compartir",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Share, contentDescription = "Compartir", tint = TextGray, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             IconButton(
                                 onClick = { onDelete(item.id) },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedDarkSurfaceVariant)
+                                    .background(DarkSurfaceVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Eliminar",
-                                    tint = TextMuted,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = TextDarkGray, modifier = Modifier.size(18.dp))
                             }
                         }
                         DownloadStatus.QUEUED -> {
                             IconButton(
-                                onClick = { onCancel(item.id) },
+                                onClick = { showCancelDialog = true },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(NeonRedDarkSurfaceVariant)
+                                    .background(DarkSurfaceVariant)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Cancelar",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.Close, contentDescription = "Cancelar", tint = TextGray, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
                 }
             }
 
-            // Progress Bar (if not completed)
             if (!isCompleted) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 LinearProgressIndicator(
                     progress = { if (item.fileSize > 0) item.progress else 0f },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
+                        .height(5.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = if (isReconnecting) NeonOrangeWarning else NeonRedPrimary,
-                    trackColor = NeonRedDarkSurfaceVariant
+                    color = if (isReconnecting) StatusOrange else AccentRed,
+                    trackColor = DarkSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Stats row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -404,30 +370,15 @@ fun DownloadCard(
                     Text(
                         text = "${item.formattedDownloaded} / ${item.formattedSize} (${item.progressPercent}%)",
                         fontSize = 11.sp,
-                        color = TextSecondary
+                        color = TextGray
                     )
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (item.threadsCount > 0) {
-                            Text(
-                                text = "${item.threadsCount} HILOS",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = NeonRedBright,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(NeonRedContainer)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        if (isDownloading && item.etaSeconds > 0) {
-                            Text(
-                                text = "ETA: ${item.formattedEta}",
-                                fontSize = 11.sp,
-                                color = TextMuted
-                            )
-                        }
+                    if (isDownloading && item.etaSeconds > 0) {
+                        Text(
+                            text = "quedan ${item.formattedEta}",
+                            fontSize = 11.sp,
+                            color = TextDarkGray
+                        )
                     }
                 }
             }

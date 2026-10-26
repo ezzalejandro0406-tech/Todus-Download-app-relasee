@@ -2,17 +2,17 @@ package com.example
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -28,8 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -67,16 +67,15 @@ import com.example.ui.components.NewDownloadDialog
 import com.example.ui.screens.ActiveDownloadsScreen
 import com.example.ui.screens.CompletedDownloadsScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.theme.AccentRed
+import com.example.ui.theme.AccentRedContainer
+import com.example.ui.theme.DarkBackground
+import com.example.ui.theme.DarkCardBorder
+import com.example.ui.theme.DarkSurface
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.theme.NeonRedBright
-import com.example.ui.theme.NeonRedCardBorder
-import com.example.ui.theme.NeonRedContainer
-import com.example.ui.theme.NeonRedDarkBackground
-import com.example.ui.theme.NeonRedDarkSurface
-import com.example.ui.theme.NeonRedPrimary
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.TextDarkGray
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextWhite
 
 class MainActivity : ComponentActivity() {
     private val viewModel: DownloadViewModel by viewModels()
@@ -93,7 +92,8 @@ class MainActivity : ComponentActivity() {
                 MainAppScreen(
                     viewModel = viewModel,
                     initialSharedUrl = sharedUrlFromIntent,
-                    onClearSharedUrl = { sharedUrlFromIntent = null }
+                    onClearSharedUrl = { sharedUrlFromIntent = null },
+                    onOpenApkRequested = { checkUnknownAppSourcesPermission() }
                 )
             }
         }
@@ -118,6 +118,24 @@ class MainActivity : ComponentActivity() {
         val parts = text.split("\\s+".toRegex())
         return parts.firstOrNull { it.startsWith("http://") || it.startsWith("https://") } ?: text
     }
+
+    private fun checkUnknownAppSourcesPermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!packageManager.canRequestPackageInstalls()) {
+                Toast.makeText(
+                    this,
+                    "Activa \"Instalar apps desconocidas\" para toDus Download y vuelve a tocar Abrir",
+                    Toast.LENGTH_LONG
+                ).show()
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+                return false
+            }
+        }
+        return true
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,7 +143,8 @@ class MainActivity : ComponentActivity() {
 fun MainAppScreen(
     viewModel: DownloadViewModel,
     initialSharedUrl: String?,
-    onClearSharedUrl: () -> Unit
+    onClearSharedUrl: () -> Unit,
+    onOpenApkRequested: () -> Boolean
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -139,7 +158,6 @@ fun MainAppScreen(
 
     var prefillUrl by remember { mutableStateOf("") }
 
-    // Request Notification permission on Android 13+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ -> }
@@ -150,7 +168,6 @@ fun MainAppScreen(
         }
     }
 
-    // Auto-open add dialog when URL is shared via SEND intent
     LaunchedEffect(initialSharedUrl) {
         if (!initialSharedUrl.isNullOrBlank()) {
             prefillUrl = initialSharedUrl
@@ -160,61 +177,39 @@ fun MainAppScreen(
     }
 
     Scaffold(
-        containerColor = NeonRedDarkBackground,
+        containerColor = DarkBackground,
         topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(NeonRedContainer)
-                                .border(1.dp, NeonRedPrimary, RoundedCornerShape(10.dp)),
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(AccentRedContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Bolt,
                                 contentDescription = null,
-                                tint = NeonRedBright,
-                                modifier = Modifier.size(22.dp)
+                                tint = AccentRed,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "toDus",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = TextPrimary
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Download",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = NeonRedBright
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(NeonRedPrimary)
-                                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                                ) {
-                                    Text(
-                                        text = "TURBO",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = TextPrimary
-                                    )
-                                }
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Multihilo & Reconexión automática",
-                                fontSize = 11.sp,
-                                color = TextMuted
+                                text = "toDus",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextWhite
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Download",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentRed
                             )
                         }
                     }
@@ -230,19 +225,19 @@ fun MainAppScreen(
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Añadir descarga",
-                            tint = NeonRedBright
+                            tint = AccentRed
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NeonRedDarkBackground
+                    containerColor = DarkBackground
                 )
             )
         },
         bottomBar = {
             NavigationBar(
-                containerColor = NeonRedDarkSurface,
-                contentColor = TextPrimary
+                containerColor = DarkSurface,
+                contentColor = TextWhite
             ) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
@@ -252,24 +247,24 @@ fun MainAppScreen(
                             badge = {
                                 if (activeDownloads.isNotEmpty()) {
                                     Badge(
-                                        containerColor = NeonRedPrimary,
-                                        contentColor = TextPrimary
+                                        containerColor = AccentRed,
+                                        contentColor = TextWhite
                                     ) {
                                         Text("${activeDownloads.size}")
                                     }
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = "Activas")
+                            Icon(Icons.Default.Download, contentDescription = "Descargas")
                         }
                     },
-                    label = { Text("Activas", fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text("Descargas", fontSize = 12.sp, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = TextPrimary,
-                        selectedTextColor = NeonRedBright,
-                        indicatorColor = NeonRedPrimary,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
+                        selectedIconColor = TextWhite,
+                        selectedTextColor = AccentRed,
+                        indicatorColor = AccentRed,
+                        unselectedIconColor = TextDarkGray,
+                        unselectedTextColor = TextDarkGray
                     ),
                     modifier = Modifier.testTag("tab_active")
                 )
@@ -282,24 +277,24 @@ fun MainAppScreen(
                             badge = {
                                 if (completedDownloads.isNotEmpty()) {
                                     Badge(
-                                        containerColor = NeonRedContainer,
-                                        contentColor = NeonRedBright
+                                        containerColor = DarkCardBorder,
+                                        contentColor = TextWhite
                                     ) {
                                         Text("${completedDownloads.size}")
                                     }
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.DoneAll, contentDescription = "Finalizadas")
+                            Icon(Icons.Default.History, contentDescription = "Historial")
                         }
                     },
-                    label = { Text("Finalizadas", fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text("Historial", fontSize = 12.sp, fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = TextPrimary,
-                        selectedTextColor = NeonRedBright,
-                        indicatorColor = NeonRedPrimary,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
+                        selectedIconColor = TextWhite,
+                        selectedTextColor = AccentRed,
+                        indicatorColor = AccentRed,
+                        unselectedIconColor = TextDarkGray,
+                        unselectedTextColor = TextDarkGray
                     ),
                     modifier = Modifier.testTag("tab_completed")
                 )
@@ -310,13 +305,13 @@ fun MainAppScreen(
                     icon = {
                         Icon(Icons.Default.Settings, contentDescription = "Ajustes")
                     },
-                    label = { Text("Ajustes", fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text("Ajustes", fontSize = 12.sp, fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = TextPrimary,
-                        selectedTextColor = NeonRedBright,
-                        indicatorColor = NeonRedPrimary,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
+                        selectedIconColor = TextWhite,
+                        selectedTextColor = AccentRed,
+                        indicatorColor = AccentRed,
+                        unselectedIconColor = TextDarkGray,
+                        unselectedTextColor = TextDarkGray
                     ),
                     modifier = Modifier.testTag("tab_settings")
                 )
@@ -329,15 +324,15 @@ fun MainAppScreen(
                         prefillUrl = ""
                         viewModel.openAddDialog()
                     },
-                    containerColor = NeonRedPrimary,
-                    contentColor = TextPrimary,
+                    containerColor = AccentRed,
+                    contentColor = TextWhite,
                     shape = CircleShape,
                     modifier = Modifier.testTag("fab_add_download")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Nueva descarga",
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -357,7 +352,10 @@ fun MainAppScreen(
                     onCancel = { viewModel.cancelDownload(it) },
                     onRetry = { viewModel.retryDownload(it) },
                     onDelete = { viewModel.deleteDownload(it, true) },
-                    onOpen = { viewModel.openFile(context, it) },
+                    onOpen = {
+                        if (it.isApk) onOpenApkRequested()
+                        viewModel.openFile(context, it)
+                    },
                     onShare = { viewModel.shareFile(context, it) },
                     onItemClick = { viewModel.showDetail(it) },
                     onPauseAll = { viewModel.pauseAll() },
@@ -369,7 +367,10 @@ fun MainAppScreen(
                 )
                 1 -> CompletedDownloadsScreen(
                     completedDownloads = completedDownloads,
-                    onOpen = { viewModel.openFile(context, it) },
+                    onOpen = {
+                        if (it.isApk) onOpenApkRequested()
+                        viewModel.openFile(context, it)
+                    },
                     onShare = { viewModel.shareFile(context, it) },
                     onDelete = { viewModel.deleteDownload(it, true) },
                     onItemClick = { viewModel.showDetail(it) },
@@ -383,7 +384,6 @@ fun MainAppScreen(
         }
     }
 
-    // Add New Download Dialog
     if (isAddDialogOpen) {
         NewDownloadDialog(
             initialUrl = prefillUrl,
@@ -397,12 +397,14 @@ fun MainAppScreen(
         )
     }
 
-    // Download Detail Dialog
     detailItem?.let { item ->
         DownloadDetailDialog(
             item = item,
             onDismiss = { viewModel.closeDetail() },
-            onOpen = { viewModel.openFile(context, it) },
+            onOpen = {
+                if (it.isApk) onOpenApkRequested()
+                viewModel.openFile(context, it)
+            },
             onShare = { viewModel.shareFile(context, it) }
         )
     }

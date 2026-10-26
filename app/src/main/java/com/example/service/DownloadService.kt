@@ -32,12 +32,15 @@ class DownloadService : Service() {
     private lateinit var notificationManager: NotificationManager
 
     companion object {
-        const val CHANNEL_ID = "todus_download_channel"
+        const val CHANNEL_DOWNLOADS = "todus_downloads_channel"
+        const val CHANNEL_DONE = "todus_done_channel"
         const val NOTIFICATION_ID = 1001
 
-        const val ACTION_START = "com.example.ACTION_START"
-        const val ACTION_PAUSE = "com.example.ACTION_PAUSE"
-        const val ACTION_CANCEL = "com.example.ACTION_CANCEL"
+        const val ACTION_START = "cu.todus.download.START"
+        const val ACTION_PAUSE = "cu.todus.download.PAUSE"
+        const val ACTION_CANCEL = "cu.todus.download.CANCEL"
+        const val ACTION_PAUSE_ALL = "cu.todus.download.PAUSE_ALL"
+        const val ACTION_RESUME_ALL = "cu.todus.download.RESUME_ALL"
         const val EXTRA_DOWNLOAD_ID = "extra_download_id"
 
         fun startDownload(context: Context, downloadId: Long) {
@@ -76,21 +79,27 @@ class DownloadService : Service() {
         engine = DownloaderEngine(this, database.downloadDao(), serviceScope)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("toDus Download", "Motor de descarga activo", 0, 0, false))
+        createNotificationChannels()
+        startForeground(NOTIFICATION_ID, buildNotification("toDus Download", "Iniciando…", 0, 0, false))
 
-        // Monitor active downloads to update foreground notification
         serviceScope.launch {
             database.downloadDao().getActiveDownloads().collectLatest { activeList ->
-                val downloadingItems = activeList.filter { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.RECONNECTING }
+                val downloadingItems = activeList.filter {
+                    it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.RECONNECTING
+                }
                 if (downloadingItems.isEmpty()) {
-                    updateNotification("toDus Download", "En espera", 0, 0, false)
+                    val pausedItems = activeList.filter { it.status == DownloadStatus.PAUSED }
+                    if (pausedItems.isNotEmpty()) {
+                        updateNotification("toDus Download", "En pausa · Toca Reanudar para continuar", 0, 0, false)
+                    } else {
+                        updateNotification("toDus Download", "Esperando turno", 0, 0, false)
+                    }
                 } else {
                     val count = downloadingItems.size
                     val totalSpeed = downloadingItems.sumOf { it.speedBytesPerSec }
-                    val speedStr = if (totalSpeed > 0) "${com.example.model.DownloadEntity.formatBytes(totalSpeed)}/s" else "0 B/s"
-                    val title = if (count == 1) downloadingItems.first().fileName else "$count descargas activas"
-                    val subtitle = "Velocidad: $speedStr • ${downloadingItems.first().formattedDownloaded}/${downloadingItems.first().formattedSize}"
+                    val speedStr = if (totalSpeed > 0) "${com.example.model.DownloadEntity.formatBytes(totalSpeed)}/s" else "Calculando velocidad…"
+                    val title = if (count == 1) downloadingItems.first().fileName else "Descargando $count archivos"
+                    val subtitle = "$speedStr · ${downloadingItems.first().formattedDownloaded}/${downloadingItems.first().formattedSize}"
                     val progress = if (downloadingItems.first().fileSize > 0) {
                         (downloadingItems.first().downloadedBytes * 100 / downloadingItems.first().fileSize).toInt()
                     } else 0
@@ -124,17 +133,22 @@ class DownloadService : Service() {
         return START_STICKY
     }
 
-    private fun createNotificationChannel() {
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Descargas toDus",
+            val progressChannel = NotificationChannel(
+                CHANNEL_DOWNLOADS,
+                "Progreso de las descargas activas",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Progreso de las descargas en curso de toDus"
                 setShowBadge(false)
             }
-            notificationManager.createNotificationChannel(channel)
+            val doneChannel = NotificationChannel(
+                CHANNEL_DONE,
+                "Avisos cuando una descarga termina o falla",
+                NotificationManager.IMPORTANCE_DEFAULT
+            )
+            notificationManager.createNotificationChannel(progressChannel)
+            notificationManager.createNotificationChannel(doneChannel)
         }
     }
 
@@ -155,7 +169,7 @@ class DownloadService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, CHANNEL_DOWNLOADS)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
             .setContentText(content)

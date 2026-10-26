@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -8,7 +7,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,29 +26,26 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.DownloadEntity
-import com.example.ui.theme.NeonOrangeWarning
-import com.example.ui.theme.NeonRedBright
-import com.example.ui.theme.NeonRedContainer
-import com.example.ui.theme.NeonRedDarkSurface
-import com.example.ui.theme.NeonRedPrimary
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.AccentRed
+import com.example.ui.theme.AccentRedContainer
+import com.example.ui.theme.DarkCardBorder
+import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.StatusOrange
+import com.example.ui.theme.TextDarkGray
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextWhite
 
 @Composable
 fun SpeedometerHeader(
@@ -61,32 +56,27 @@ fun SpeedometerHeader(
     onResumeAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowAlpha"
-    )
+    val infiniteTransition = rememberInfiniteTransition(label = "spin")
     val spinRotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = FastOutSlowInEasing)
+            animation = tween(1200, easing = FastOutSlowInEasing)
         ),
         label = "spin"
     )
 
-    val speedFormatted = if (totalSpeedBps > 0) DownloadEntity.formatBytes(totalSpeedBps) + "/s" else "0.0 KB/s"
+    val speedFormatted = when {
+        isReconnectingAny -> "Reanudando…"
+        totalSpeedBps > 0 -> "${DownloadEntity.formatBytes(totalSpeedBps)}/s"
+        activeCount > 0 -> "Calculando velocidad…"
+        else -> "0 B/s"
+    }
 
     NeonCard(
         modifier = modifier.fillMaxWidth(),
-        borderColor = if (totalSpeedBps > 0) NeonRedPrimary.copy(alpha = glowAlpha) else NeonRedPrimary.copy(alpha = 0.4f),
-        borderWidth = 1.5.dp,
-        containerColor = NeonRedDarkSurface
+        borderColor = if (totalSpeedBps > 0) AccentRed.copy(alpha = 0.6f) else DarkCardBorder,
+        containerColor = DarkSurface
     ) {
         Column(
             modifier = Modifier
@@ -101,50 +91,48 @@ fun SpeedometerHeader(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
-                            .background(NeonRedContainer)
-                            .border(1.dp, NeonRedPrimary, CircleShape),
+                            .background(AccentRedContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Bolt,
-                            contentDescription = "Turbo",
-                            tint = NeonRedBright,
+                            contentDescription = null,
+                            tint = AccentRed,
                             modifier = Modifier.size(22.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "VELOCIDAD GLOBAL",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.2.sp,
-                            color = NeonRedBright
+                            text = "Velocidad total",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextGray
                         )
                         Text(
                             text = speedFormatted,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Black,
-                            color = TextPrimary
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (totalSpeedBps > 0) AccentRed else TextWhite
                         )
                     }
                 }
 
-                // Batch controls
+                // Controls: Pausar todo / Reanudar todo
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = onResumeAll,
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(NeonRedContainer)
+                            .background(DarkSurfaceVariant)
                     ) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = "Reanudar todo",
-                            tint = TextPrimary,
+                            tint = TextWhite,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -152,65 +140,52 @@ fun SpeedometerHeader(
                     IconButton(
                         onClick = onPauseAll,
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(NeonRedContainer)
+                            .background(DarkSurfaceVariant)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Pause,
                             contentDescription = "Pausar todo",
-                            tint = TextSecondary,
+                            tint = TextGray,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Sub-status line
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "$activeCount tareas activas en cola",
-                    fontSize = 12.sp,
-                    color = TextMuted
-                )
-
-                if (isReconnectingAny) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(NeonOrangeWarning.copy(alpha = 0.15f))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Sync,
-                            contentDescription = "Reconectando",
-                            tint = NeonOrangeWarning,
-                            modifier = Modifier
-                                .size(14.dp)
-                                .rotate(spinRotation)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Auto-reconectando…",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = NeonOrangeWarning
-                        )
-                    }
-                } else if (totalSpeedBps > 0) {
+            if (isReconnectingAny || activeCount > 0) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "TURBO MULTIHILO ACTIVO",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = NeonRedBright
+                        text = if (activeCount == 1) "1 descarga activa" else "$activeCount descargas activas",
+                        fontSize = 12.sp,
+                        color = TextDarkGray
                     )
+
+                    if (isReconnectingAny) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = null,
+                                tint = StatusOrange,
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .rotate(spinRotation)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Auto-reconectando…",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = StatusOrange
+                            )
+                        }
+                    }
                 }
             }
         }

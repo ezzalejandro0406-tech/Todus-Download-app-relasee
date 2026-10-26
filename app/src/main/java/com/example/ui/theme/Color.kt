@@ -2,24 +2,21 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Radiant Neon Red Theme Colors
-val NeonRedPrimary = Color(0xFFFF1744) // Radiant Electric Neon Red
-val NeonRedBright = Color(0xFFFF2A55)
-val NeonRedGlow = Color(0xFFFF003F)
-val NeonRedSecondary = Color(0xFFFF5252)
-val NeonRedTertiary = Color(0xFFFF7D8E)
+// Modern Sleek Dark & Radiant Red Palette
+val AccentRed = Color(0xFFFF2442)          // Radiant Modern Red Accent
+val AccentRedDark = Color(0xFFD31027)      // Deep Red
+val AccentRedGlow = Color(0xFFFF415B)      // Light glow
+val AccentRedContainer = Color(0xFF331017) // Subtle container
 
-val NeonRedDarkBackground = Color(0xFF0D0305) // Deep stealth black-red
-val NeonRedDarkSurface = Color(0xFF17080B)     // Sleek surface
-val NeonRedDarkSurfaceVariant = Color(0xFF260E14)
-val NeonRedCardBorder = Color(0xFF5A1422)      // Subtle glowing border
-val NeonRedContainer = Color(0xFF3B0711)
-val NeonRedOnContainer = Color(0xFFFFDADE)
+val DarkBackground = Color(0xFF121212)    // Standard clean AMOLED dark
+val DarkSurface = Color(0xFF1E1E1E)       // Smooth elevated surface
+val DarkSurfaceVariant = Color(0xFF282828)
+val DarkCardBorder = Color(0xFF333333)     // Refined clean border
 
-val NeonCyanAccent = Color(0xFF00E5FF)         // High-tech speed accent
-val NeonOrangeWarning = Color(0xFFFF9100)      // Reconnecting state color
-val NeonGreenSuccess = Color(0xFF00E676)       // Completed state color
+val StatusGreen = Color(0xFF00E676)       // Completed
+val StatusOrange = Color(0xFFFF9100)      // Reconnecting
+val StatusBlue = Color(0xFF29B6F6)        // Info
 
-val TextPrimary = Color(0xFFFFF0F2)
-val TextSecondary = Color(0xFFC7A7AC)
-val TextMuted = Color(0xFF8C7175)
+val TextWhite = Color(0xFFF5F5F5)
+val TextGray = Color(0xFFB0B0B0)
+val TextDarkGray = Color(0xFF757575)

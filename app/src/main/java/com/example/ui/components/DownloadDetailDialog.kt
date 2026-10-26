@@ -40,15 +40,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.model.DownloadEntity
 import com.example.model.DownloadStatus
-import com.example.ui.theme.NeonRedBright
-import com.example.ui.theme.NeonRedCardBorder
-import com.example.ui.theme.NeonRedContainer
-import com.example.ui.theme.NeonRedDarkSurface
-import com.example.ui.theme.NeonRedDarkSurfaceVariant
-import com.example.ui.theme.NeonRedPrimary
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.AccentRed
+import com.example.ui.theme.AccentRedContainer
+import com.example.ui.theme.DarkCardBorder
+import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.TextDarkGray
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextWhite
 
 @Composable
 fun DownloadDetailDialog(
@@ -62,9 +61,9 @@ fun DownloadDetailDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = NeonRedDarkSurface,
-            border = androidx.compose.foundation.BorderStroke(1.5.dp, NeonRedPrimary),
+            shape = RoundedCornerShape(16.dp),
+            color = DarkSurface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -78,22 +77,22 @@ fun DownloadDetailDialog(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(NeonRedContainer),
+                            .background(AccentRedContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = null,
-                            tint = NeonRedBright,
+                            tint = AccentRed,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Detalles de Descarga",
-                        fontSize = 18.sp,
+                        text = "Detalles de descarga",
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = TextWhite
                     )
                 }
 
@@ -105,34 +104,32 @@ fun DownloadDetailDialog(
                     label = "Progreso",
                     value = "${item.formattedDownloaded} / ${item.formattedSize} (${item.progressPercent}%)"
                 )
-                DetailItem(label = "Hilos activos", value = "${item.threadsCount} hilos simultáneos")
-                DetailItem(label = "Reintentos de red", value = "${item.reconnectAttempt} intentos")
+                DetailItem(label = "Hilos", value = "${item.threadsCount} hilos")
 
                 if (item.filePath.isNotEmpty()) {
-                    DetailItem(label = "Ruta local", value = item.filePath)
+                    DetailItem(label = "Carpeta", value = item.filePath)
                 }
 
                 if (!item.errorMsg.isNullOrEmpty()) {
-                    DetailItem(label = "Último error", value = item.errorMsg, isError = true)
+                    DetailItem(label = "Error", value = item.errorMsg, isError = true)
                 }
 
-                // Copyable URL section
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Enlace de origen:",
+                    text = "Enlace:",
                     fontSize = 12.sp,
-                    color = TextMuted
+                    color = TextDarkGray
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(NeonRedDarkSurfaceVariant)
+                        .background(DarkSurfaceVariant)
                         .clickable {
                             val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clip.setPrimaryClip(ClipData.newPlainText("URL", item.url))
-                            Toast.makeText(context, "Enlace copiado al portapapeles", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Enlace copiado", Toast.LENGTH_SHORT).show()
                         }
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -141,7 +138,7 @@ fun DownloadDetailDialog(
                     Text(
                         text = item.url,
                         fontSize = 11.sp,
-                        color = TextSecondary,
+                        color = TextGray,
                         maxLines = 2,
                         modifier = Modifier.weight(1f)
                     )
@@ -149,7 +146,7 @@ fun DownloadDetailDialog(
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
                         contentDescription = "Copiar enlace",
-                        tint = NeonRedBright,
+                        tint = AccentRed,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -166,21 +163,21 @@ fun DownloadDetailDialog(
                             onClick = { onShare(item) },
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("Compartir", fontSize = 13.sp, color = TextPrimary)
+                            Text("Compartir", fontSize = 13.sp, color = TextWhite)
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = { onOpen(item) },
-                            colors = ButtonDefaults.buttonColors(containerColor = NeonRedPrimary),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("Abrir archivo", fontSize = 13.sp, color = TextPrimary)
+                            Text("Abrir", fontSize = 13.sp, color = TextWhite)
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                     }
 
                     TextButton(onClick = onDismiss) {
-                        Text("Cerrar", fontSize = 14.sp, color = TextSecondary)
+                        Text("Cerrar", fontSize = 14.sp, color = TextGray)
                     }
                 }
             }
@@ -191,12 +188,12 @@ fun DownloadDetailDialog(
 @Composable
 private fun DetailItem(label: String, value: String, isError: Boolean = false) {
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        Text(text = label, fontSize = 11.sp, color = TextMuted)
+        Text(text = label, fontSize = 11.sp, color = TextDarkGray)
         Text(
             text = value,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            color = if (isError) NeonRedBright else TextPrimary
+            color = if (isError) AccentRed else TextWhite
         )
     }
 }

@@ -37,12 +37,11 @@ import com.example.model.DownloadStatus
 import com.example.ui.components.DownloadCard
 import com.example.ui.components.SpeedometerHeader
 import com.example.ui.components.VpnTipBanner
-import com.example.ui.theme.NeonRedBright
-import com.example.ui.theme.NeonRedContainer
-import com.example.ui.theme.NeonRedPrimary
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.AccentRed
+import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.TextDarkGray
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextWhite
 
 @Composable
 fun ActiveDownloadsScreen(
@@ -107,7 +106,7 @@ fun ActiveDownloadsScreen(
         }
 
         item {
-            Spacer(modifier = Modifier.height(60.dp))
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
@@ -122,34 +121,34 @@ private fun EmptyActiveState(onAddNew: () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .size(72.dp)
+                .size(64.dp)
                 .clip(CircleShape)
-                .background(NeonRedContainer),
+                .background(DarkSurfaceVariant),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.CloudDownload,
                 contentDescription = null,
-                tint = NeonRedBright,
-                modifier = Modifier.size(36.dp)
+                tint = TextDarkGray,
+                modifier = Modifier.size(32.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         Text(
-            text = "Sin descargas activas",
-            fontSize = 18.sp,
+            text = "No hay descargas",
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = TextWhite
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Pega un enlace de toDus o enlace directo para comenzar a descargar a máxima velocidad multihilo.",
+            text = "Pega un enlace de toDus.",
             fontSize = 13.sp,
-            color = TextSecondary,
+            color = TextDarkGray,
             textAlign = TextAlign.Center
         )
 
@@ -157,13 +156,13 @@ private fun EmptyActiveState(onAddNew: () -> Unit) {
 
         Button(
             onClick = onAddNew,
-            colors = ButtonDefaults.buttonColors(containerColor = NeonRedPrimary),
+            colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
             shape = CircleShape,
             modifier = Modifier.testTag("empty_state_add_button")
         ) {
             Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Añadir enlace", fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("Pega un enlace de toDus", fontWeight = FontWeight.Bold, color = TextWhite)
         }
     }
 }

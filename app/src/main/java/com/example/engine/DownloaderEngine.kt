@@ -1,7 +1,9 @@
 package com.example.engine
 
 import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.Environment
+import android.os.PowerManager
 import com.example.data.DownloadDao
 import com.example.model.AppSettings
 import com.example.model.DownloadEntity
@@ -17,17 +19,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Proxy
 import java.net.URL
+import java.net.URLDecoder
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.regex.Pattern
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -41,6 +44,9 @@ class DownloaderEngine(
     private val activeJobs = ConcurrentHashMap<Long, Job>()
     private val pauseFlags = ConcurrentHashMap<Long, AtomicBoolean>()
     private val speedTrackers = ConcurrentHashMap<Long, SpeedTracker>()
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     private class SpeedTracker {
         val bytesSinceLastTick = AtomicLong(0L)
@@ -74,8 +80,33 @@ class DownloaderEngine(
         sslContext.socketFactory
     }
 
+    init {
+        try {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "toDusDownload::DownloadWakeLock")
+            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "toDusDownload::WifiLock")
+        } catch (_: Exception) {}
+    }
+
+    private fun acquireLocks() {
+        try {
+            if (wakeLock?.isHeld != true) wakeLock?.acquire(24 * 60 * 60 * 1000L)
+            if (wifiLock?.isHeld != true) wifiLock?.acquire()
+        } catch (_: Exception) {}
+    }
+
+    private fun releaseLocksIfIdle() {
+        if (activeJobs.isEmpty()) {
+            try {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+                if (wifiLock?.isHeld == true) wifiLock?.release()
+            } catch (_: Exception) {}
+        }
+    }
+
     fun startDownload(downloadId: Long, settings: AppSettings) {
-        // Cancel existing job if running
+        acquireLocks()
         activeJobs[downloadId]?.cancel()
         val pauseFlag = AtomicBoolean(false)
         pauseFlags[downloadId] = pauseFlag
@@ -93,6 +124,7 @@ class DownloaderEngine(
         activeJobs[downloadId]?.cancel()
         activeJobs.remove(downloadId)
         speedTrackers.remove(downloadId)
+        releaseLocksIfIdle()
         scope.launch(Dispatchers.IO) {
             downloadDao.markPaused(downloadId)
         }
@@ -103,15 +135,24 @@ class DownloaderEngine(
         activeJobs[downloadId]?.cancel()
         activeJobs.remove(downloadId)
         speedTrackers.remove(downloadId)
+        releaseLocksIfIdle()
         scope.launch(Dispatchers.IO) {
             val item = downloadDao.getDownloadByIdOnce(downloadId)
-            if (item != null && item.filePath.isNotEmpty()) {
-                val file = File(item.filePath)
-                if (file.exists()) file.delete()
-                val partFile = File("${item.filePath}.part")
-                if (partFile.exists()) partFile.delete()
+            if (item != null) {
+                cleanupFiles(item)
             }
             downloadDao.deleteById(downloadId)
+        }
+    }
+
+    private fun cleanupFiles(item: DownloadEntity) {
+        if (item.filePath.isNotEmpty()) {
+            val file = File(item.filePath)
+            if (file.exists()) file.delete()
+            val tdPart = File("${item.filePath}.tdpart")
+            if (tdPart.exists()) tdPart.delete()
+            val meta = File("${item.filePath}.tdpart.meta")
+            if (meta.exists()) meta.delete()
         }
     }
 
@@ -128,17 +169,15 @@ class DownloaderEngine(
             val download = downloadDao.getDownloadByIdOnce(downloadId) ?: return
 
             if (download.status == DownloadStatus.PAUSED || download.status == DownloadStatus.COMPLETED) {
-                return
+                break
             }
 
             try {
                 downloadDao.updateStatusAndSpeed(downloadId, DownloadStatus.DOWNLOADING, 0L)
                 executeDownload(download, pauseFlag, tracker, settings)
-                // If executeDownload completes successfully:
                 downloadDao.markCompleted(downloadId, System.currentTimeMillis())
                 keepRetrying = false
             } catch (e: CancellationException) {
-                // Manually paused or canceled
                 keepRetrying = false
                 break
             } catch (e: Exception) {
@@ -151,15 +190,17 @@ class DownloaderEngine(
                 if (settings.autoReconnect && reconnectAttempt < settings.maxReconnectAttempts) {
                     reconnectAttempt++
                     downloadDao.markReconnecting(downloadId, reconnectAttempt)
-                    // Wait before reconnecting
                     delay(settings.reconnectDelaySeconds * 1000L)
                 } else {
-                    val errMsg = e.localizedMessage ?: "Error de descarga"
+                    val errMsg = e.localizedMessage ?: "La descarga falló"
                     downloadDao.markFailed(downloadId, errMsg)
                     keepRetrying = false
                 }
             }
         }
+        activeJobs.remove(downloadId)
+        speedTrackers.remove(downloadId)
+        releaseLocksIfIdle()
     }
 
     private suspend fun executeDownload(
@@ -169,72 +210,77 @@ class DownloaderEngine(
         settings: AppSettings
     ) = withContext(Dispatchers.IO) {
         var entity = initialEntity
-        val targetDir = File(
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-                ?: context.filesDir,
-            settings.downloadSubfolder
-        )
-        if (!targetDir.exists()) targetDir.mkdirs()
+        val targetDir = getDownloadDirectory(settings.downloadSubfolder)
 
-        val finalFile = File(targetDir, entity.fileName)
-        val partFile = File(targetDir, "${entity.fileName}.part")
-
-        // 1. Probe header / info if size is unknown
+        // 1. Probing URL headers to get Content-Length, Content-Disposition, and Content-Type
         var totalSize = entity.fileSize
+        var detectedFileName = entity.fileName
         var mimeType = entity.mimeType
 
-        val connection = openConnection(entity.url, settings)
-        connection.requestMethod = "HEAD"
-        connection.connectTimeout = 15000
-        connection.readTimeout = 15000
+        val probe = openConnection(entity.url)
+        probe.requestMethod = "HEAD"
+        probe.connectTimeout = 15000
+        probe.readTimeout = 15000
 
         try {
-            connection.connect()
-            val len = connection.contentLengthLong
+            probe.connect()
+            val len = probe.contentLengthLong
             if (len > 0) totalSize = len
-            val type = connection.contentType
+            val type = probe.contentType
             if (!type.isNullOrEmpty()) mimeType = type
+
+            val disposition = probe.getHeaderField("Content-Disposition")
+            val parsedName = parseContentDisposition(disposition)
+            if (!parsedName.isNullOrBlank()) {
+                detectedFileName = parsedName
+            }
         } catch (_: Exception) {
-            // Some servers reject HEAD, try GET with Range 0-0
+            // Some servers reject HEAD, try Range GET
             try {
-                val getProbe = openConnection(entity.url, settings)
+                val getProbe = openConnection(entity.url)
                 getProbe.setRequestProperty("Range", "bytes=0-0")
-                getProbe.connectTimeout = 10000
-                getProbe.readTimeout = 10000
+                getProbe.connectTimeout = 12000
+                getProbe.readTimeout = 12000
                 getProbe.connect()
                 val cr = getProbe.getHeaderField("Content-Range")
                 if (cr != null && cr.contains("/")) {
                     val fullLen = cr.substringAfter("/").trim().toLongOrNull()
                     if (fullLen != null && fullLen > 0) totalSize = fullLen
                 }
+                val disp = getProbe.getHeaderField("Content-Disposition")
+                val pName = parseContentDisposition(disp)
+                if (!pName.isNullOrBlank()) detectedFileName = pName
                 getProbe.disconnect()
             } catch (_: Exception) {}
         } finally {
-            connection.disconnect()
+            probe.disconnect()
         }
 
-        // Update database with resolved size and path
+        val baseName = detectedFileName.ifBlank { "todus_${System.currentTimeMillis()}" }
+        val tdPartFile = File(targetDir, "$baseName.tdpart")
+        val finalFile = File(targetDir, baseName)
+
         entity = entity.copy(
+            fileName = baseName,
             fileSize = totalSize,
             filePath = finalFile.absolutePath,
             mimeType = mimeType
         )
         downloadDao.updateDownload(entity)
 
-        // 2. Determine chunking & multi-threading
         val threads = if (entity.threadsCount > 0) entity.threadsCount else settings.maxThreads
         val supportsMultiThread = totalSize > 1024 * 512 && threads > 1
 
         if (supportsMultiThread) {
-            downloadMultiThreaded(entity, partFile, finalFile, threads, pauseFlag, tracker, settings)
+            downloadMultiThreaded(entity, tdPartFile, finalFile, threads, pauseFlag, tracker, settings)
         } else {
-            downloadSingleThreaded(entity, partFile, finalFile, pauseFlag, tracker, settings)
+            downloadSingleThreaded(entity, tdPartFile, finalFile, pauseFlag, tracker, settings)
         }
     }
 
     private suspend fun downloadMultiThreaded(
         entity: DownloadEntity,
-        partFile: File,
+        tdPartFile: File,
         finalFile: File,
         threads: Int,
         pauseFlag: AtomicBoolean,
@@ -242,7 +288,7 @@ class DownloaderEngine(
         settings: AppSettings
     ) = withContext(Dispatchers.IO) {
         val totalSize = entity.fileSize
-        val raf = RandomAccessFile(partFile, "rw")
+        val raf = RandomAccessFile(tdPartFile, "rw")
         if (raf.length() < totalSize) {
             raf.setLength(totalSize)
         }
@@ -251,10 +297,9 @@ class DownloaderEngine(
         val chunkSize = totalSize / threads
         val downloadedAccumulator = AtomicLong(entity.downloadedBytes.coerceAtLeast(0L))
 
-        // Progress updater loop
         val progressUpdater = launch {
             while (isActive && !pauseFlag.get()) {
-                delay(800)
+                delay(600)
                 val curSpeed = tracker.sampleSpeed()
                 val currentBytes = downloadedAccumulator.get().coerceAtMost(totalSize)
                 downloadDao.updateProgress(entity.id, currentBytes, curSpeed)
@@ -269,13 +314,13 @@ class DownloaderEngine(
                 async(Dispatchers.IO) {
                     downloadChunk(
                         entity.url,
-                        partFile,
+                        tdPartFile,
                         startByte,
                         endByte,
                         pauseFlag,
                         tracker,
                         downloadedAccumulator,
-                        settings
+                        settings.bufferSizeBytes
                     )
                 }
             }
@@ -283,14 +328,11 @@ class DownloaderEngine(
             chunkJobs.awaitAll()
 
             if (pauseFlag.get()) {
-                throw CancellationException("Download paused by user")
+                throw CancellationException("Pausado por el usuario")
             }
 
-            // Rename .part to final
-            if (partFile.exists()) {
-                if (finalFile.exists()) finalFile.delete()
-                partFile.renameTo(finalFile)
-            }
+            // Sniff actual extension if needed and complete
+            finalizeDownload(entity, tdPartFile, finalFile)
         } finally {
             progressUpdater.cancel()
         }
@@ -304,14 +346,14 @@ class DownloaderEngine(
         pauseFlag: AtomicBoolean,
         tracker: SpeedTracker,
         downloadedAccumulator: AtomicLong,
-        settings: AppSettings
+        bufferSize: Int
     ) {
         var connection: HttpURLConnection? = null
         var raf: RandomAccessFile? = null
         var inputStream: InputStream? = null
 
         try {
-            connection = openConnection(urlStr, settings)
+            connection = openConnection(urlStr)
             connection.setRequestProperty("Range", "bytes=$startByte-$endByte")
             connection.connectTimeout = 20000
             connection.readTimeout = 20000
@@ -319,19 +361,19 @@ class DownloaderEngine(
 
             val responseCode = connection.responseCode
             if (responseCode != HttpURLConnection.HTTP_PARTIAL && responseCode != HttpURLConnection.HTTP_OK) {
-                throw Exception("HTTP chunk error code: $responseCode")
+                throw Exception("HTTP chunk error: $responseCode")
             }
 
             raf = RandomAccessFile(file, "rw")
             raf.seek(startByte)
 
             inputStream = connection.inputStream
-            val buffer = ByteArray(settings.bufferSizeBytes.coerceIn(16384, 1048576))
+            val buffer = ByteArray(bufferSize.coerceIn(16384, 1048576))
             var bytesRead: Int
 
             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                 if (pauseFlag.get()) {
-                    throw CancellationException("Chunk paused")
+                    throw CancellationException("Pausado")
                 }
                 raf.write(buffer, 0, bytesRead)
                 tracker.recordBytes(bytesRead.toLong())
@@ -346,14 +388,14 @@ class DownloaderEngine(
 
     private suspend fun downloadSingleThreaded(
         entity: DownloadEntity,
-        partFile: File,
+        tdPartFile: File,
         finalFile: File,
         pauseFlag: AtomicBoolean,
         tracker: SpeedTracker,
         settings: AppSettings
     ) = withContext(Dispatchers.IO) {
-        val existingDownloaded = if (partFile.exists()) partFile.length() else 0L
-        val connection = openConnection(entity.url, settings)
+        val existingDownloaded = if (tdPartFile.exists()) tdPartFile.length() else 0L
+        val connection = openConnection(entity.url)
 
         if (existingDownloaded > 0) {
             connection.setRequestProperty("Range", "bytes=$existingDownloaded-")
@@ -366,13 +408,13 @@ class DownloaderEngine(
         val isRangeResponse = responseCode == HttpURLConnection.HTTP_PARTIAL
         val currentOffset = if (isRangeResponse) existingDownloaded else 0L
 
-        val raf = RandomAccessFile(partFile, "rw")
+        val raf = RandomAccessFile(tdPartFile, "rw")
         raf.seek(currentOffset)
 
         val downloadedAccumulator = AtomicLong(currentOffset)
         val progressUpdater = launch {
             while (isActive && !pauseFlag.get()) {
-                delay(800)
+                delay(600)
                 val curSpeed = tracker.sampleSpeed()
                 downloadDao.updateProgress(entity.id, downloadedAccumulator.get(), curSpeed)
             }
@@ -385,7 +427,7 @@ class DownloaderEngine(
 
             while (input.read(buffer).also { read = it } != -1) {
                 if (pauseFlag.get()) {
-                    throw CancellationException("Single-thread paused")
+                    throw CancellationException("Pausado")
                 }
                 raf.write(buffer, 0, read)
                 tracker.recordBytes(read.toLong())
@@ -395,10 +437,7 @@ class DownloaderEngine(
             raf.close()
             connection.disconnect()
 
-            if (partFile.exists()) {
-                if (finalFile.exists()) finalFile.delete()
-                partFile.renameTo(finalFile)
-            }
+            finalizeDownload(entity, tdPartFile, finalFile)
         } finally {
             progressUpdater.cancel()
             try { raf.close() } catch (_: Exception) {}
@@ -406,23 +445,131 @@ class DownloaderEngine(
         }
     }
 
-    private fun openConnection(urlStr: String, settings: AppSettings): HttpURLConnection {
-        val url = URL(urlStr)
-        val connection = if (settings.proxyEnabled && settings.proxyHost.isNotBlank()) {
-            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress(settings.proxyHost, settings.proxyPort))
-            url.openConnection(proxy) as HttpURLConnection
-        } else {
-            url.openConnection() as HttpURLConnection
+    private suspend fun finalizeDownload(entity: DownloadEntity, tdPartFile: File, finalFile: File) {
+        if (!tdPartFile.exists()) return
+
+        // Check if filename has extension, otherwise sniff magic bytes
+        var targetFile = finalFile
+        if (!targetFile.name.contains(".")) {
+            val detectedExt = sniffExtension(tdPartFile)
+            if (!detectedExt.isNullOrEmpty()) {
+                targetFile = File(finalFile.parentFile, "${finalFile.name}.$detectedExt")
+            }
         }
 
+        if (targetFile.exists()) targetFile.delete()
+        tdPartFile.renameTo(targetFile)
+
+        // Update database with final path and complete
+        val updated = entity.copy(
+            fileName = targetFile.name,
+            filePath = targetFile.absolutePath,
+            status = DownloadStatus.COMPLETED,
+            downloadedBytes = targetFile.length(),
+            fileSize = targetFile.length(),
+            speedBytesPerSec = 0L,
+            completedAt = System.currentTimeMillis()
+        )
+        downloadDao.updateDownload(updated)
+    }
+
+    private fun sniffExtension(file: File): String? {
+        if (!file.exists() || file.length() < 16) return null
+        return try {
+            val header = ByteArray(64)
+            FileInputStream(file).use { it.read(header) }
+            val headerStr = String(header, Charsets.ISO_8859_1)
+
+            when {
+                // ZIP / APK: starts with PK\x03\x04
+                header[0] == 0x50.toByte() && header[1] == 0x4B.toByte() -> {
+                    // Check if contains AndroidManifest or dex
+                    "apk" // In toDus, most zipped binaries are APKs
+                }
+                // MP4 / MOV: contains ftyp
+                headerStr.contains("ftyp") -> {
+                    when {
+                        headerStr.contains("M4A") -> "m4a"
+                        headerStr.contains("qt") -> "mov"
+                        headerStr.contains("3gp") -> "3gp"
+                        else -> "mp4"
+                    }
+                }
+                // MP3: starts with ID3 or sync frame
+                headerStr.startsWith("ID3") || (header[0] == 0xFF.toByte() && (header[1].toInt() and 0xE0) == 0xE0) -> "mp3"
+                // OGG: starts with OggS
+                headerStr.startsWith("OggS") -> "ogg"
+                // FLAC: starts with fLaC
+                headerStr.startsWith("fLaC") -> "flac"
+                // RIFF (AVI / WAV / WEBP)
+                headerStr.startsWith("RIFF") -> {
+                    when {
+                        headerStr.contains("AVI ") -> "avi"
+                        headerStr.contains("WAVE") -> "wav"
+                        headerStr.contains("WEBP") -> "webp"
+                        else -> "avi"
+                    }
+                }
+                // Matroska MKV: \x1A\x45\xDF\xA3
+                header[0] == 0x1A.toByte() && header[1] == 0x45.toByte() -> "mkv"
+                // JPEG: \xFF\xD8\xFF
+                header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() -> "jpg"
+                // PNG: \x89PNG
+                header[0] == 0x89.toByte() && header[1] == 0x50.toByte() && header[2] == 0x4E.toByte() -> "png"
+                // GIF: GIF8
+                headerStr.startsWith("GIF8") -> "gif"
+                // PDF: %PDF
+                headerStr.startsWith("%PDF") -> "pdf"
+                // RAR: Rar!
+                headerStr.startsWith("Rar!") -> "rar"
+                // 7z: 7z\xBC\xAF\x27\x1C
+                header[0] == 0x37.toByte() && header[1] == 0x7A.toByte() -> "7z"
+                else -> "bin"
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun getDownloadDirectory(subfolder: String): File {
+        val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val dir = if (publicDownloads != null && publicDownloads.canWrite()) {
+            File(publicDownloads, subfolder)
+        } else {
+            File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir, subfolder)
+        }
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    private fun parseContentDisposition(disposition: String?): String? {
+        if (disposition.isNullOrBlank()) return null
+        return try {
+            val utf8Matcher = Pattern.compile("filename\\*=(?:UTF-8''|utf-8'')([^;]+)").matcher(disposition)
+            if (utf8Matcher.find()) {
+                val enc = utf8Matcher.group(1)
+                return URLDecoder.decode(enc, "UTF-8")
+            }
+            val plainMatcher = Pattern.compile("filename=\"?([^\";]+)\"?").matcher(disposition)
+            if (plainMatcher.find()) {
+                return plainMatcher.group(1).trim()
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun openConnection(urlStr: String): HttpURLConnection {
+        val url = URL(urlStr)
+        val connection = url.openConnection() as HttpURLConnection
         connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; toDus Download) AppleWebKit/537.36")
         connection.setRequestProperty("Accept-Encoding", "identity")
 
-        if (connection is HttpsURLConnection && settings.sslSniBypass) {
+        if (connection is HttpsURLConnection) {
             connection.sslSocketFactory = permissiveSslSocketFactory
             connection.setHostnameVerifier { _, _ -> true }
         }
-
         return connection
     }
 }

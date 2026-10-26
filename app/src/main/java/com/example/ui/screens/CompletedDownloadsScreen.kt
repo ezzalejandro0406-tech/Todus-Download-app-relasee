@@ -51,16 +51,15 @@ import androidx.compose.ui.unit.sp
 import com.example.model.DownloadEntity
 import com.example.ui.components.DownloadCard
 import com.example.ui.components.NeonCard
-import com.example.ui.theme.NeonGreenSuccess
-import com.example.ui.theme.NeonRedBright
-import com.example.ui.theme.NeonRedCardBorder
-import com.example.ui.theme.NeonRedContainer
-import com.example.ui.theme.NeonRedDarkSurface
-import com.example.ui.theme.NeonRedDarkSurfaceVariant
-import com.example.ui.theme.NeonRedPrimary
-import com.example.ui.theme.TextMuted
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.AccentRed
+import com.example.ui.theme.AccentRedContainer
+import com.example.ui.theme.DarkCardBorder
+import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.StatusGreen
+import com.example.ui.theme.TextDarkGray
+import com.example.ui.theme.TextGray
+import com.example.ui.theme.TextWhite
 
 @Composable
 fun CompletedDownloadsScreen(
@@ -97,15 +96,15 @@ fun CompletedDownloadsScreen(
             onDismissRequest = { showClearDialog = false },
             title = {
                 Text(
-                    text = "Limpiar historial",
+                    text = "¿Limpiar el historial?",
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = TextWhite
                 )
             },
             text = {
                 Text(
-                    text = "¿Deseas eliminar el registro de todas las descargas completadas del historial en la base de datos?",
-                    color = TextSecondary
+                    text = "Se vacía la lista de descargas terminadas guardadas en la base de datos.",
+                    color = TextGray
                 )
             },
             confirmButton = {
@@ -114,17 +113,17 @@ fun CompletedDownloadsScreen(
                         showClearDialog = false
                         onClearAll()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonRedPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
                 ) {
-                    Text("Limpiar", color = TextPrimary)
+                    Text("Limpiar", color = TextWhite)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancelar", color = TextSecondary)
+                    Text("Cancelar", color = TextGray)
                 }
             },
-            containerColor = NeonRedDarkSurface,
+            containerColor = DarkSurface,
             shape = RoundedCornerShape(16.dp)
         )
     }
@@ -140,8 +139,8 @@ fun CompletedDownloadsScreen(
         item {
             NeonCard(
                 modifier = Modifier.fillMaxWidth(),
-                borderColor = NeonGreenSuccess.copy(alpha = 0.5f),
-                containerColor = NeonRedDarkSurface
+                borderColor = DarkCardBorder,
+                containerColor = DarkSurface
             ) {
                 Row(
                     modifier = Modifier
@@ -155,30 +154,30 @@ fun CompletedDownloadsScreen(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(NeonGreenSuccess.copy(alpha = 0.15f)),
+                                .background(StatusGreen.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = null,
-                                tint = NeonGreenSuccess,
+                                tint = StatusGreen,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "${completedDownloads.size} DESCARGAS GUARDADAS",
+                                text = "HISTORIAL GUARDADO",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = NeonGreenSuccess,
+                                color = StatusGreen,
                                 letterSpacing = 1.sp
                             )
                             Text(
-                                text = DownloadEntity.formatBytes(totalDownloadedBytes),
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black,
-                                color = TextPrimary
+                                text = "${completedDownloads.size} archivos · ${DownloadEntity.formatBytes(totalDownloadedBytes)}",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextWhite
                             )
                         }
                     }
@@ -188,11 +187,11 @@ fun CompletedDownloadsScreen(
                             Icon(
                                 imageVector = Icons.Default.DeleteSweep,
                                 contentDescription = null,
-                                tint = TextSecondary,
+                                tint = TextGray,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Limpiar", color = TextSecondary, fontSize = 12.sp)
+                            Text("Limpiar", color = TextGray, fontSize = 12.sp)
                         }
                     }
                 }
@@ -205,12 +204,12 @@ fun CompletedDownloadsScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Buscar en historial…", color = TextMuted, fontSize = 13.sp) },
+                    placeholder = { Text("Buscar en historial…", color = TextDarkGray, fontSize = 13.sp) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = null,
-                            tint = NeonRedBright,
+                            tint = AccentRed,
                             modifier = Modifier.size(20.dp)
                         )
                     },
@@ -220,22 +219,22 @@ fun CompletedDownloadsScreen(
                                 Icon(
                                     imageVector = Icons.Default.Clear,
                                     contentDescription = "Limpiar",
-                                    tint = TextSecondary,
+                                    tint = TextGray,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonRedPrimary,
-                        unfocusedBorderColor = NeonRedCardBorder,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = NeonRedPrimary,
-                        focusedContainerColor = NeonRedDarkSurfaceVariant,
-                        unfocusedContainerColor = NeonRedDarkSurfaceVariant
+                        focusedBorderColor = AccentRed,
+                        unfocusedBorderColor = DarkCardBorder,
+                        focusedTextColor = TextWhite,
+                        unfocusedTextColor = TextWhite,
+                        cursorColor = AccentRed,
+                        focusedContainerColor = DarkSurfaceVariant,
+                        unfocusedContainerColor = DarkSurfaceVariant
                     ),
                     singleLine = true
                 )
@@ -252,12 +251,7 @@ fun CompletedDownloadsScreen(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) NeonRedPrimary else NeonRedDarkSurfaceVariant)
-                                .border(
-                                    1.dp,
-                                    if (isSelected) NeonRedBright else NeonRedCardBorder,
-                                    RoundedCornerShape(8.dp)
-                                )
+                                .background(if (isSelected) AccentRed else DarkSurfaceVariant)
                                 .clickable { selectedCategory = cat }
                                 .padding(horizontal = 14.dp, vertical = 6.dp)
                         ) {
@@ -265,7 +259,7 @@ fun CompletedDownloadsScreen(
                                 text = cat,
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) TextPrimary else TextSecondary
+                                color = if (isSelected) TextWhite else TextGray
                             )
                         }
                     }
@@ -286,9 +280,9 @@ fun CompletedDownloadsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "No se encontraron descargas con este filtro",
+                        text = "Historial vacío para este filtro",
                         fontSize = 14.sp,
-                        color = TextSecondary
+                        color = TextGray
                     )
                 }
             }
@@ -309,7 +303,7 @@ fun CompletedDownloadsScreen(
         }
 
         item {
-            Spacer(modifier = Modifier.height(60.dp))
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
@@ -324,34 +318,34 @@ private fun EmptyCompletedState() {
     ) {
         Box(
             modifier = Modifier
-                .size(72.dp)
+                .size(64.dp)
                 .clip(CircleShape)
-                .background(NeonRedContainer),
+                .background(DarkSurfaceVariant),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.DownloadDone,
                 contentDescription = null,
-                tint = TextSecondary,
-                modifier = Modifier.size(36.dp)
+                tint = TextDarkGray,
+                modifier = Modifier.size(32.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         Text(
-            text = "Sin descargas finalizadas",
-            fontSize = 18.sp,
+            text = "Historial vacío",
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = TextWhite
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Los archivos completados se guardan persistentemente en Room Database con su ruta, fecha y tamaño exactos.",
+            text = "Los archivos completados se guardan aquí para abrirlos o compartirlos.",
             fontSize = 13.sp,
-            color = TextSecondary,
+            color = TextDarkGray,
             textAlign = TextAlign.Center
         )
     }
