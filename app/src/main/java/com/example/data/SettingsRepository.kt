@@ -42,16 +42,24 @@ class SettingsRepository(context: Context) {
         return if (isLinked) {
             UserProfile(
                 isLinked = true,
-                name = prefs.getString("user_name", "JAKUDOSHY 👑 Ofc") ?: "JAKUDOSHY 👑 Ofc",
-                username = prefs.getString("user_username", "@Jakudoshy") ?: "@Jakudoshy",
-                linkCode = prefs.getString("user_link_code", "JK-7492") ?: "JK-7492"
+                fullName = prefs.getString("user_full_name", "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ") ?: "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
+                telegramId = prefs.getString("user_telegram_id", "ID: 618492041") ?: "ID: 618492041",
+                accountStatus = prefs.getString("user_account_status", "Verificado VIP · Activo") ?: "Verificado VIP · Activo",
+                balance = prefs.getString("user_balance", "$ 150.00 CUP") ?: "$ 150.00 CUP",
+                quotaPlan = prefs.getString("user_quota_plan", "Plan Premium Ultra (Sin Límite)") ?: "Plan Premium Ultra (Sin Límite)",
+                linkCode = prefs.getString("user_link_code", "JK-SYNCED") ?: "JK-SYNCED",
+                linkedDate = prefs.getString("user_linked_date", "26 Oct 2026") ?: "26 Oct 2026"
             )
         } else {
             UserProfile(
                 isLinked = false,
-                name = "Invitado",
-                username = "@invitado",
-                linkCode = prefs.getString("user_link_code", "JK-7492") ?: "JK-7492"
+                fullName = "Modo Invitado",
+                telegramId = "No Vinculado",
+                accountStatus = "Cuenta Invitado",
+                balance = "$ 0.00 CUP",
+                quotaPlan = "Plan Estándar",
+                linkCode = prefs.getString("user_link_code", "JK-7492") ?: "JK-7492",
+                linkedDate = ""
             )
         }
     }
@@ -80,9 +88,13 @@ class SettingsRepository(context: Context) {
     fun updateProfile(profile: UserProfile) {
         prefs.edit().apply {
             putBoolean("user_is_linked", profile.isLinked)
-            putString("user_name", profile.name)
-            putString("user_username", profile.username)
+            putString("user_full_name", profile.fullName)
+            putString("user_telegram_id", profile.telegramId)
+            putString("user_account_status", profile.accountStatus)
+            putString("user_balance", profile.balance)
+            putString("user_quota_plan", profile.quotaPlan)
             putString("user_link_code", profile.linkCode)
+            putString("user_linked_date", profile.linkedDate)
             apply()
         }
         _userProfile.value = profile
@@ -91,19 +103,32 @@ class SettingsRepository(context: Context) {
     fun unlinkTelegram() {
         val guest = UserProfile(
             isLinked = false,
-            name = "Invitado",
-            username = "@invitado",
-            linkCode = "JK-${(1000..9999).random()}"
+            fullName = "Modo Invitado",
+            telegramId = "No Vinculado",
+            accountStatus = "Cuenta Invitado",
+            balance = "$ 0.00 CUP",
+            quotaPlan = "Plan Estándar",
+            linkCode = "JK-${(1000..9999).random()}",
+            linkedDate = ""
         )
         updateProfile(guest)
     }
 
-    fun linkTelegram(name: String, username: String) {
+    fun linkTelegram(
+        fullName: String,
+        telegramId: String = "ID: 618492041",
+        balance: String = "$ 150.00 CUP",
+        quotaPlan: String = "Plan Premium Ultra (Sin Límite)"
+    ) {
         val linked = UserProfile(
             isLinked = true,
-            name = name.ifBlank { "JAKUDOSHY 👑 Ofc" },
-            username = if (username.startsWith("@")) username else "@$username",
-            linkCode = "JK-SYNCED"
+            fullName = fullName.ifBlank { "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ" },
+            telegramId = if (telegramId.startsWith("ID:")) telegramId else "ID: $telegramId",
+            accountStatus = "Verificado VIP · Activo",
+            balance = balance,
+            quotaPlan = quotaPlan,
+            linkCode = "JK-SYNCED",
+            linkedDate = "26 Oct 2026"
         )
         updateProfile(linked)
     }

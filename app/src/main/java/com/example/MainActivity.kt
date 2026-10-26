@@ -335,6 +335,15 @@ fun MainAppScreen(
                                 )
                             } else {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    androidx.compose.foundation.Image(
+                                        painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_jk_brand),
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(CircleShape)
+                                            .border(1.dp, accentColor, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "JK",
                                         fontSize = 18.sp,
@@ -594,8 +603,8 @@ fun MainAppScreen(
     if (isTelegramLinkDialogOpen) {
         TelegramLinkDialog(
             userProfile = userProfile,
-            onLink = { name, username ->
-                viewModel.linkTelegram(name, username)
+            onLink = { fullName, telegramId, balance, quotaPlan ->
+                viewModel.linkTelegram(fullName, telegramId, balance, quotaPlan)
             },
             onUnlink = { viewModel.unlinkTelegram() },
             onDismiss = { isTelegramLinkDialogOpen = false }

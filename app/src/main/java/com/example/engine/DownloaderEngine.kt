@@ -217,7 +217,7 @@ class DownloaderEngine(
         var detectedFileName = entity.fileName
         var mimeType = entity.mimeType
 
-        val probe = openConnection(entity.url)
+        val probe = openConnection(entity.url, settings)
         probe.requestMethod = "HEAD"
         probe.connectTimeout = 15000
         probe.readTimeout = 15000
@@ -237,7 +237,7 @@ class DownloaderEngine(
         } catch (_: Exception) {
             // Some servers reject HEAD, try Range GET
             try {
-                val getProbe = openConnection(entity.url)
+                val getProbe = openConnection(entity.url, settings)
                 getProbe.setRequestProperty("Range", "bytes=0-0")
                 getProbe.connectTimeout = 12000
                 getProbe.readTimeout = 12000
@@ -320,7 +320,8 @@ class DownloaderEngine(
                         pauseFlag,
                         tracker,
                         downloadedAccumulator,
-                        settings.bufferSizeBytes
+                        settings.bufferSizeBytes,
+                        settings
                     )
                 }
             }
@@ -346,14 +347,15 @@ class DownloaderEngine(
         pauseFlag: AtomicBoolean,
         tracker: SpeedTracker,
         downloadedAccumulator: AtomicLong,
-        bufferSize: Int
+        bufferSize: Int,
+        settings: AppSettings
     ) {
         var connection: HttpURLConnection? = null
         var raf: RandomAccessFile? = null
         var inputStream: InputStream? = null
 
         try {
-            connection = openConnection(urlStr)
+            connection = openConnection(urlStr, settings)
             connection.setRequestProperty("Range", "bytes=$startByte-$endByte")
             connection.connectTimeout = 20000
             connection.readTimeout = 20000
@@ -395,7 +397,7 @@ class DownloaderEngine(
         settings: AppSettings
     ) = withContext(Dispatchers.IO) {
         val existingDownloaded = if (tdPartFile.exists()) tdPartFile.length() else 0L
-        val connection = openConnection(entity.url)
+        val connection = openConnection(entity.url, settings)
 
         if (existingDownloaded > 0) {
             connection.setRequestProperty("Range", "bytes=$existingDownloaded-")
@@ -560,11 +562,25 @@ class DownloaderEngine(
         }
     }
 
-    private fun openConnection(urlStr: String): HttpURLConnection {
+    private fun openConnection(urlStr: String, settings: AppSettings? = null): HttpURLConnection {
         val url = URL(urlStr)
-        val connection = url.openConnection() as HttpURLConnection
+        val connection = if (settings?.proxyEnabled == true && settings.proxyHost.isNotBlank()) {
+            try {
+                val proxy = java.net.Proxy(
+                    java.net.Proxy.Type.HTTP,
+                    java.net.InetSocketAddress(settings.proxyHost, settings.proxyPort)
+                )
+                url.openConnection(proxy) as HttpURLConnection
+            } catch (_: Exception) {
+                url.openConnection() as HttpURLConnection
+            }
+        } else {
+            url.openConnection() as HttpURLConnection
+        }
+
         connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; toDus Download) AppleWebKit/537.36")
         connection.setRequestProperty("Accept-Encoding", "identity")
+        connection.setRequestProperty("Connection", "keep-alive")
 
         if (connection is HttpsURLConnection) {
             connection.sslSocketFactory = permissiveSslSocketFactory
