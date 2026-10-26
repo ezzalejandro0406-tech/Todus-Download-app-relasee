@@ -5,45 +5,43 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val CleanDarkColorScheme = darkColorScheme(
-    primary = AccentRed,
-    onPrimary = TextWhite,
-    primaryContainer = AccentRedContainer,
-    onPrimaryContainer = TextWhite,
-    secondary = AccentRedGlow,
-    onSecondary = TextWhite,
-    secondaryContainer = DarkSurfaceVariant,
-    onSecondaryContainer = TextWhite,
-    tertiary = StatusBlue,
-    background = DarkBackground,
-    onBackground = TextWhite,
-    surface = DarkSurface,
-    onSurface = TextWhite,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = TextGray,
-    outline = DarkCardBorder,
-    error = AccentRed
-)
-
 @Composable
 fun MyApplicationTheme(
-    darkTheme: Boolean = true,
-    dynamicColor: Boolean = false,
+    accentColor: Color = AccentSwatches[0], // Default 0 is Neon Radiant Red
     content: @Composable () -> Unit
 ) {
-    val colorScheme = CleanDarkColorScheme
+    val colorScheme = darkColorScheme(
+        primary = accentColor,
+        onPrimary = TextWhite,
+        primaryContainer = UdyatDarkSurfaceVariant,
+        onPrimaryContainer = TextWhite,
+        secondary = accentColor,
+        onSecondary = TextWhite,
+        secondaryContainer = UdyatDarkSurfaceVariant,
+        onSecondaryContainer = TextWhite,
+        tertiary = StatusCyan,
+        background = UdyatDarkBackground,
+        onBackground = TextWhite,
+        surface = UdyatDarkSurface,
+        onSurface = TextWhite,
+        surfaceVariant = UdyatDarkSurfaceVariant,
+        onSurfaceVariant = TextGray,
+        outline = UdyatDarkCardBorder,
+        error = StatusRed
+    )
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window
             if (window != null) {
-                window.statusBarColor = DarkBackground.toArgb()
-                window.navigationBarColor = DarkBackground.toArgb()
+                window.statusBarColor = UdyatDarkBackground.toArgb()
+                window.navigationBarColor = UdyatDarkBackground.toArgb()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
                 WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
             }

@@ -1,6 +1,8 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -14,19 +16,27 @@ import com.example.data.SettingsRepository
 import com.example.model.AppSettings
 import com.example.model.DownloadEntity
 import com.example.model.DownloadStatus
+import com.example.model.UserProfile
 import com.example.service.DownloadService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URLDecoder
+
+enum class SortOption {
+    NEWEST,
+    OLDEST,
+    NAME_AZ,
+    NAME_ZA,
+    SIZE_LARGEST,
+    SIZE_SMALLEST
+}
 
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
@@ -34,6 +44,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val settingsRepository = SettingsRepository(application)
 
     val settings: StateFlow<AppSettings> = settingsRepository.settings
+    val userProfile: StateFlow<UserProfile> = settingsRepository.userProfile
+
+    val allDownloads: StateFlow<List<DownloadEntity>> = downloadDao.getAllDownloads()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeDownloads: StateFlow<List<DownloadEntity>> = downloadDao.getActiveDownloads()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -51,6 +65,26 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val _detailItem = MutableStateFlow<DownloadEntity?>(null)
     val detailItem: StateFlow<DownloadEntity?> = _detailItem.asStateFlow()
 
+    // Search and Sort
+    val searchQuery = MutableStateFlow("")
+    val sortOption = MutableStateFlow(SortOption.NEWEST)
+
+    // Notification banners
+    val queuedNotificationCount = MutableStateFlow<Int?>(null)
+    val settingsSavedBanner = MutableStateFlow(false)
+
+    fun dismissQueuedBanner() {
+        queuedNotificationCount.value = null
+    }
+
+    fun showSettingsSavedBanner() {
+        settingsSavedBanner.value = true
+    }
+
+    fun dismissSettingsSavedBanner() {
+        settingsSavedBanner.value = false
+    }
+
     fun openAddDialog() {
         _isAddDialogOpen.value = true
     }
@@ -67,26 +101,37 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         _detailItem.value = null
     }
 
-    fun addDownload(rawUrl: String, customThreads: Int? = null) {
+    fun addDownload(rawUrl: String, customThreads: Int? = null, customName: String? = null) {
         val trimmed = rawUrl.trim()
         if (trimmed.isEmpty()) return
 
+        // Support multiple URLs separated by newlines
+        val lines = trimmed.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.isEmpty()) return
+
         viewModelScope.launch(Dispatchers.IO) {
-            val fileName = extractFileNameFromUrl(trimmed)
             val threads = customThreads ?: settings.value.maxThreads
+            for ((index, url) in lines.withIndex()) {
+                val fileName = if (!customName.isNullOrBlank() && lines.size == 1) {
+                    customName.trim()
+                } else {
+                    extractFileNameFromUrl(url)
+                }
 
-            val entity = DownloadEntity(
-                url = trimmed,
-                fileName = fileName,
-                fileSize = 0L,
-                downloadedBytes = 0L,
-                status = DownloadStatus.DOWNLOADING,
-                threadsCount = threads,
-                createdAt = System.currentTimeMillis()
-            )
+                val entity = DownloadEntity(
+                    url = url,
+                    fileName = fileName,
+                    fileSize = 0L,
+                    downloadedBytes = 0L,
+                    status = DownloadStatus.DOWNLOADING,
+                    threadsCount = threads,
+                    createdAt = System.currentTimeMillis() + index
+                )
 
-            val newId = downloadDao.insertDownload(entity)
-            DownloadService.startDownload(getApplication(), newId)
+                val newId = downloadDao.insertDownload(entity)
+                DownloadService.startDownload(getApplication(), newId)
+            }
+            queuedNotificationCount.value = lines.size
         }
     }
 
@@ -139,10 +184,20 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             if (item != null && deleteFile && item.filePath.isNotEmpty()) {
                 val file = File(item.filePath)
                 if (file.exists()) file.delete()
-                val partFile = File("${item.filePath}.part")
-                if (partFile.exists()) partFile.delete()
+                val tdPart = File("${item.filePath}.tdpart")
+                if (tdPart.exists()) tdPart.delete()
+                val meta = File("${item.filePath}.tdpart.meta")
+                if (meta.exists()) meta.delete()
             }
             downloadDao.deleteById(id)
+        }
+    }
+
+    fun batchDelete(ids: Set<Long>, deleteFile: Boolean = true) {
+        viewModelScope.launch(Dispatchers.IO) {
+            for (id in ids) {
+                deleteDownload(id, deleteFile)
+            }
         }
     }
 
@@ -152,8 +207,24 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun copyUrl(context: Context, url: String) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("URL", url)
+        cm.setPrimaryClip(clip)
+        Toast.makeText(context, "Enlace copiado al portapapeles", Toast.LENGTH_SHORT).show()
+    }
+
     fun updateSettings(newSettings: AppSettings) {
         settingsRepository.updateSettings(newSettings)
+        showSettingsSavedBanner()
+    }
+
+    fun linkTelegram(name: String, username: String) {
+        settingsRepository.linkTelegram(name, username)
+    }
+
+    fun unlinkTelegram() {
+        settingsRepository.unlinkTelegram()
     }
 
     fun openFile(context: Context, item: DownloadEntity) {

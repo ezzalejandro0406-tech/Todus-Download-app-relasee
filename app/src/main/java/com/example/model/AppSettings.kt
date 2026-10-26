@@ -1,12 +1,18 @@
 package com.example.model
 
 data class AppSettings(
-    val maxThreads: Int = 16,
-    val maxConcurrentDownloads: Int = 2,
+    val themeMode: String = "Oscuro", // "Sistema", "Claro", "Oscuro"
+    val accentColorIndex: Int = 0,    // 0 = Neon Radiant Red as requested
+    val maxConcurrentDownloads: Int = 1,
+    val maxThreads: Int = 4,
     val autoReconnect: Boolean = true,
-    val maxReconnectAttempts: Int = 10,
+    val maxReconnectAttempts: Int = 5,
     val reconnectDelaySeconds: Int = 3,
-    val bufferSizeBytes: Int = 262144, // 256 KB
-    val downloadSubfolder: String = "toDus Download",
+    val speedLimit: String = "Sin Límite",
+    val downloadSubfolder: String = "JKDOWN",
+    val proxyEnabled: Boolean = false,
+    val proxyHost: String = "",
+    val proxyPort: Int = 8080,
+    val bufferSizeBytes: Int = 262144,
     val showNotifications: Boolean = true
 )

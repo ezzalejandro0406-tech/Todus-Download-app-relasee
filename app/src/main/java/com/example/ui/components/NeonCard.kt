@@ -10,16 +10,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.DarkCardBorder
-import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.UdyatDarkCardBorder
+import com.example.ui.theme.UdyatDarkSurface
 
 @Composable
 fun NeonCard(
     modifier: Modifier = Modifier,
-    borderColor: Color = DarkCardBorder,
+    borderColor: Color = UdyatDarkCardBorder,
     borderWidth: Dp = 1.dp,
-    cornerRadius: Dp = 14.dp,
-    containerColor: Color = DarkSurface,
+    cornerRadius: Dp = 16.dp,
+    containerColor: Color = UdyatDarkSurface,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
