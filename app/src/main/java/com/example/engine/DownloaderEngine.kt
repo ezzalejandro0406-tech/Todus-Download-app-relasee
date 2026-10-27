@@ -112,13 +112,13 @@ class DownloaderEngine(
 
             override fun createSocket(host: java.net.InetAddress?, port: Int): Socket {
                 val socket = defaultFactory.createSocket(host, port)
-                applySni(socket, host?.hostName)
+                applySni(socket, host?.hostAddress ?: host?.hostName)
                 return socket
             }
 
             override fun createSocket(address: java.net.InetAddress?, port: Int, localAddress: java.net.InetAddress?, localPort: Int): Socket {
                 val socket = defaultFactory.createSocket(address, port, localAddress, localPort)
-                applySni(socket, address?.hostName)
+                applySni(socket, address?.hostAddress ?: address?.hostName)
                 return socket
             }
 
@@ -831,7 +831,16 @@ class DownloaderEngine(
     }
 
     private fun openConnection(urlStr: String, settings: AppSettings? = null): HttpURLConnection {
-        val url = URL(urlStr)
+        // En Cuba con 0 megas (navegación nacional ETECSA gratuita), la resolución DNS de s3.todus.cu
+        // falla con UnknownHostException. Se reemplaza 's3.todus.cu' directamente por la IP nacional
+        // '152.207.206.86' (método idéntico a Ls30;->g y Lmf0;->a de la APK de referencia).
+        val resolvedUrlStr = if (urlStr.contains("s3.todus.cu", ignoreCase = true)) {
+            urlStr.replace("s3.todus.cu", "152.207.206.86", ignoreCase = true)
+        } else {
+            urlStr
+        }
+
+        val url = URL(resolvedUrlStr)
         val connection = if (settings?.proxyEnabled == true && settings.proxyHost.isNotBlank()) {
             try {
                 val proxy = Proxy(
@@ -845,6 +854,10 @@ class DownloaderEngine(
         } else {
             url.openConnection() as HttpURLConnection
         }
+
+        connection.instanceFollowRedirects = true
+        connection.connectTimeout = 20000
+        connection.readTimeout = 25000
 
         // Exact User-Agent and Headers matching reference app:
         val lowerUrl = urlStr.lowercase()
@@ -868,7 +881,10 @@ class DownloaderEngine(
 
         if (connection is HttpsURLConnection) {
             connection.sslSocketFactory = permissiveSslSocketFactory
-            connection.setHostnameVerifier { _, _ -> true }
+            connection.setHostnameVerifier { hostname, _ ->
+                // Permite s3.todus.cu y 152.207.206.86
+                true
+            }
         }
         return connection
     }
