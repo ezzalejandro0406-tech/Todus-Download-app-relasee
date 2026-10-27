@@ -293,6 +293,7 @@ fun MainAppScreen(
     ) {
         if (currentScreen == "settings") {
             SettingsScreen(
+                viewModel = viewModel,
                 settings = settings,
                 onSaveSettings = { viewModel.updateSettings(it) },
                 onBack = { currentScreen = "home" }
@@ -599,16 +600,24 @@ fun MainAppScreen(
         )
     }
 
-    // Dialog: Telegram Linking
+    // Dialog: Telegram Linking / User Profile
     if (isTelegramLinkDialogOpen) {
-        TelegramLinkDialog(
-            userProfile = userProfile,
-            onLinkSuccess = { fullName, username, telegramId, photoUrl ->
-                viewModel.linkTelegram(fullName, username, telegramId, photoUrl)
-            },
-            onUnlink = { viewModel.unlinkTelegram() },
-            onDismiss = { isTelegramLinkDialogOpen = false }
-        )
+        if (userProfile.isLinked) {
+            com.example.ui.components.UserProfileDialog(
+                userProfile = userProfile,
+                onDismiss = { isTelegramLinkDialogOpen = false },
+                onUnlink = { viewModel.unlinkTelegram() }
+            )
+        } else {
+            TelegramLinkDialog(
+                userProfile = userProfile,
+                onLinkSuccess = { fullName, username, telegramId, photoUrl ->
+                    viewModel.linkTelegram(fullName, username, telegramId, photoUrl)
+                },
+                onUnlink = { viewModel.unlinkTelegram() },
+                onDismiss = { isTelegramLinkDialogOpen = false }
+            )
+        }
     }
 
     // Dialog: Archivos en la Nube

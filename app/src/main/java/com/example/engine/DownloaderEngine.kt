@@ -1,6 +1,7 @@
 package com.example.engine
 
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.wifi.WifiManager
 import android.os.Environment
 import android.os.PowerManager
@@ -18,13 +19,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
@@ -32,7 +38,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.regex.Pattern
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
@@ -60,7 +69,7 @@ class DownloaderEngine(
         fun sampleSpeed(): Long {
             val now = System.currentTimeMillis()
             val elapsed = now - lastSampleTime
-            if (elapsed >= 500) {
+            if (elapsed >= 400) {
                 val bytes = bytesSinceLastTick.getAndSet(0L)
                 currentSpeedBps = if (elapsed > 0) (bytes * 1000L) / elapsed else 0L
                 lastSampleTime = now
@@ -69,7 +78,7 @@ class DownloaderEngine(
         }
     }
 
-    private val permissiveSslSocketFactory by lazy {
+    private val permissiveSslSocketFactory: SSLSocketFactory by lazy {
         val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
             override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
@@ -77,7 +86,59 @@ class DownloaderEngine(
         })
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(null, trustAllCerts, SecureRandom())
-        sslContext.socketFactory
+        val defaultFactory = sslContext.socketFactory
+
+        object : SSLSocketFactory() {
+            override fun getDefaultCipherSuites(): Array<String> = defaultFactory.defaultCipherSuites
+            override fun getSupportedCipherSuites(): Array<String> = defaultFactory.supportedCipherSuites
+
+            override fun createSocket(s: Socket?, host: String?, port: Int, autoClose: Boolean): Socket {
+                val socket = defaultFactory.createSocket(s, host, port, autoClose)
+                applySni(socket, host)
+                return socket
+            }
+
+            override fun createSocket(host: String?, port: Int): Socket {
+                val socket = defaultFactory.createSocket(host, port)
+                applySni(socket, host)
+                return socket
+            }
+
+            override fun createSocket(host: String?, port: Int, localHost: java.net.InetAddress?, localPort: Int): Socket {
+                val socket = defaultFactory.createSocket(host, port, localHost, localPort)
+                applySni(socket, host)
+                return socket
+            }
+
+            override fun createSocket(host: java.net.InetAddress?, port: Int): Socket {
+                val socket = defaultFactory.createSocket(host, port)
+                applySni(socket, host?.hostName)
+                return socket
+            }
+
+            override fun createSocket(address: java.net.InetAddress?, port: Int, localAddress: java.net.InetAddress?, localPort: Int): Socket {
+                val socket = defaultFactory.createSocket(address, port, localAddress, localPort)
+                applySni(socket, address?.hostName)
+                return socket
+            }
+
+            private fun applySni(socket: Socket?, targetHost: String?) {
+                if (socket is SSLSocket) {
+                    try {
+                        val params = socket.sslParameters
+                        val sniHost = if (targetHost == "152.207.206.86" || targetHost?.contains("todus") == true) {
+                            "s3.todus.cu"
+                        } else {
+                            targetHost
+                        }
+                        if (!sniHost.isNullOrEmpty()) {
+                            params.serverNames = listOf(SNIHostName(sniHost))
+                            socket.sslParameters = params
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
     }
 
     init {
@@ -212,15 +273,22 @@ class DownloaderEngine(
         var entity = initialEntity
         val targetDir = getDownloadDirectory(settings.downloadSubfolder)
 
-        // 1. Probing URL headers to get Content-Length, Content-Disposition, and Content-Type
+        // 1. Check if this download is a multi-part chunked download (.udyat format)
+        if (entity.chunksData.isNotBlank()) {
+            downloadChunkedFile(entity, targetDir, pauseFlag, tracker, settings)
+            return@withContext
+        }
+
+        // 2. Direct single file download (Probing Range & Content-Length)
         var totalSize = entity.fileSize
         var detectedFileName = entity.fileName
         var mimeType = entity.mimeType
+        var supportsRange = false
 
         val probe = openConnection(entity.url, settings)
         probe.requestMethod = "HEAD"
-        probe.connectTimeout = 15000
-        probe.readTimeout = 15000
+        probe.connectTimeout = 12000
+        probe.readTimeout = 12000
 
         try {
             probe.connect()
@@ -229,13 +297,18 @@ class DownloaderEngine(
             val type = probe.contentType
             if (!type.isNullOrEmpty()) mimeType = type
 
+            val acceptRanges = probe.getHeaderField("Accept-Ranges")
+            if (acceptRanges?.contains("bytes", ignoreCase = true) == true) {
+                supportsRange = true
+            }
+
             val disposition = probe.getHeaderField("Content-Disposition")
             val parsedName = parseContentDisposition(disposition)
             if (!parsedName.isNullOrBlank()) {
                 detectedFileName = parsedName
             }
         } catch (_: Exception) {
-            // Some servers reject HEAD, try Range GET
+            // Some servers reject HEAD, try Range probe
             try {
                 val getProbe = openConnection(entity.url, settings)
                 getProbe.setRequestProperty("Range", "bytes=0-0")
@@ -244,6 +317,7 @@ class DownloaderEngine(
                 getProbe.connect()
                 val cr = getProbe.getHeaderField("Content-Range")
                 if (cr != null && cr.contains("/")) {
+                    supportsRange = true
                     val fullLen = cr.substringAfter("/").trim().toLongOrNull()
                     if (fullLen != null && fullLen > 0) totalSize = fullLen
                 }
@@ -256,7 +330,7 @@ class DownloaderEngine(
             probe.disconnect()
         }
 
-        val baseName = detectedFileName.ifBlank { "todus_${System.currentTimeMillis()}" }
+        val baseName = detectedFileName.ifBlank { "jk_${System.currentTimeMillis()}" }
         val tdPartFile = File(targetDir, "$baseName.tdpart")
         val finalFile = File(targetDir, baseName)
 
@@ -269,16 +343,199 @@ class DownloaderEngine(
         downloadDao.updateDownload(entity)
 
         val threads = if (entity.threadsCount > 0) entity.threadsCount else settings.maxThreads
-        val supportsMultiThread = totalSize > 1024 * 512 && threads > 1
+        val shouldMultiThread = supportsRange && totalSize > 1024 * 512 && threads > 1
 
-        if (supportsMultiThread) {
-            downloadMultiThreaded(entity, tdPartFile, finalFile, threads, pauseFlag, tracker, settings)
+        if (shouldMultiThread) {
+            downloadMultiThreadedRanges(entity, tdPartFile, finalFile, threads, pauseFlag, tracker, settings)
         } else {
             downloadSingleThreaded(entity, tdPartFile, finalFile, pauseFlag, tracker, settings)
         }
     }
 
-    private suspend fun downloadMultiThreaded(
+    private data class ChunkPart(val url: String, val size: Long, val md5: String?)
+
+    private suspend fun downloadChunkedFile(
+        entity: DownloadEntity,
+        targetDir: File,
+        pauseFlag: AtomicBoolean,
+        tracker: SpeedTracker,
+        settings: AppSettings
+    ) = withContext(Dispatchers.IO) {
+        val jsonArray = JSONArray(entity.chunksData)
+        val parts = mutableListOf<ChunkPart>()
+        var calculatedTotal = 0L
+
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            val u = obj.optString("u")
+            val s = obj.optLong("s", 0L)
+            val m = obj.optString("m").ifBlank { null }
+            if (u.isNotBlank()) {
+                parts.add(ChunkPart(u, s, m))
+                calculatedTotal += s
+            }
+        }
+
+        if (parts.isEmpty()) {
+            throw Exception("No se encontraron fragmentos (chunks) para descargar")
+        }
+
+        val totalSize = if (entity.fileSize > 0) entity.fileSize else calculatedTotal
+        val baseName = entity.fileName.ifBlank { "jk_${System.currentTimeMillis()}" }
+        val tdPartFile = File(targetDir, "$baseName.tdpart")
+        val finalFile = File(targetDir, baseName)
+
+        val updatedEntity = entity.copy(
+            fileName = baseName,
+            fileSize = totalSize,
+            filePath = finalFile.absolutePath
+        )
+        downloadDao.updateDownload(updatedEntity)
+
+        // Preallocate target file length in RandomAccessFile
+        val rafInit = RandomAccessFile(tdPartFile, "rw")
+        if (rafInit.length() < totalSize) {
+            rafInit.setLength(totalSize)
+        }
+        rafInit.close()
+
+        val downloadedAccumulator = AtomicLong(entity.downloadedBytes.coerceAtLeast(0L))
+
+        val progressUpdater = launch {
+            while (isActive && !pauseFlag.get()) {
+                delay(500)
+                val curSpeed = tracker.sampleSpeed()
+                val currentBytes = downloadedAccumulator.get().coerceAtMost(totalSize)
+                downloadDao.updateProgress(entity.id, currentBytes, curSpeed)
+            }
+        }
+
+        try {
+            // Calculate starting offset for each chunk
+            val offsets = LongArray(parts.size)
+            var currentAcc = 0L
+            for (i in parts.indices) {
+                offsets[i] = currentAcc
+                currentAcc += parts[i].size
+            }
+
+            // Distribute chunk downloads among thread workers
+            val threads = (if (entity.threadsCount > 0) entity.threadsCount else settings.maxThreads).coerceAtLeast(1)
+            val queue = java.util.concurrent.ConcurrentLinkedQueue(parts.indices.toList())
+
+            val workers = (0 until threads).map {
+                async(Dispatchers.IO) {
+                    while (!queue.isEmpty() && !pauseFlag.get()) {
+                        val chunkIdx = queue.poll() ?: break
+                        val chunk = parts[chunkIdx]
+                        val chunkOffset = offsets[chunkIdx]
+                        downloadSingleChunk(
+                            chunk = chunk,
+                            offset = chunkOffset,
+                            destFile = tdPartFile,
+                            pauseFlag = pauseFlag,
+                            tracker = tracker,
+                            downloadedAccumulator = downloadedAccumulator,
+                            settings = settings
+                        )
+                    }
+                }
+            }
+
+            workers.awaitAll()
+
+            if (pauseFlag.get()) {
+                throw CancellationException("Pausado")
+            }
+
+            finalizeDownload(updatedEntity, tdPartFile, finalFile)
+        } finally {
+            progressUpdater.cancel()
+        }
+    }
+
+    private fun downloadSingleChunk(
+        chunk: ChunkPart,
+        offset: Long,
+        destFile: File,
+        pauseFlag: AtomicBoolean,
+        tracker: SpeedTracker,
+        downloadedAccumulator: AtomicLong,
+        settings: AppSettings
+    ) {
+        var attempts = 0
+        var success = false
+        var lastErr: Exception? = null
+
+        while (attempts < settings.maxReconnectAttempts && !success && !pauseFlag.get()) {
+            attempts++
+            var conn: HttpURLConnection? = null
+            var raf: RandomAccessFile? = null
+            var input: InputStream? = null
+
+            try {
+                conn = openConnection(chunk.url, settings)
+                conn.connectTimeout = 20000
+                conn.readTimeout = 25000
+                conn.connect()
+
+                val code = conn.responseCode
+                if (code == 404) {
+                    throw Exception("El fragmento no se encuentra en la nube (HTTP 404). Ya ha sido descargado y eliminado.")
+                }
+                if (code !in 200..299) {
+                    throw Exception("Error de red en fragmento: HTTP $code")
+                }
+
+                raf = RandomAccessFile(destFile, "rw")
+                raf.seek(offset)
+
+                input = conn.inputStream
+                val bufferSize = 131072 // 128 KB buffer for optimal throughput
+                val buffer = ByteArray(bufferSize)
+                var bytesRead: Int
+                val md5Digest = if (!chunk.md5.isNullOrEmpty()) MessageDigest.getInstance("MD5") else null
+
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    if (pauseFlag.get()) {
+                        throw CancellationException("Pausado")
+                    }
+                    raf.write(buffer, 0, bytesRead)
+                    md5Digest?.update(buffer, 0, bytesRead)
+                    tracker.recordBytes(bytesRead.toLong())
+                    downloadedAccumulator.addAndGet(bytesRead.toLong())
+
+                    applySpeedThrottle(bytesRead, settings.speedLimit)
+                }
+
+                // Verify chunk MD5 if provided
+                if (md5Digest != null && !chunk.md5.isNullOrEmpty()) {
+                    val digestBytes = md5Digest.digest()
+                    val hex = digestBytes.joinToString("") { "%02x".format(it) }
+                    if (!hex.equals(chunk.md5, ignoreCase = true)) {
+                        throw Exception("Fallo de integridad MD5 en el fragmento (Esperado: ${chunk.md5}, Obtenido: $hex)")
+                    }
+                }
+
+                success = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastErr = e
+                try { Thread.sleep(1000L * attempts) } catch (_: Exception) {}
+            } finally {
+                try { input?.close() } catch (_: Exception) {}
+                try { raf?.close() } catch (_: Exception) {}
+                try { conn?.disconnect() } catch (_: Exception) {}
+            }
+        }
+
+        if (!success && !pauseFlag.get()) {
+            throw lastErr ?: Exception("Error descargando fragmento tras $attempts intentos")
+        }
+    }
+
+    private suspend fun downloadMultiThreadedRanges(
         entity: DownloadEntity,
         tdPartFile: File,
         finalFile: File,
@@ -288,18 +545,18 @@ class DownloaderEngine(
         settings: AppSettings
     ) = withContext(Dispatchers.IO) {
         val totalSize = entity.fileSize
-        val raf = RandomAccessFile(tdPartFile, "rw")
-        if (raf.length() < totalSize) {
-            raf.setLength(totalSize)
+        val rafInit = RandomAccessFile(tdPartFile, "rw")
+        if (rafInit.length() < totalSize) {
+            rafInit.setLength(totalSize)
         }
-        raf.close()
+        rafInit.close()
 
         val chunkSize = totalSize / threads
         val downloadedAccumulator = AtomicLong(entity.downloadedBytes.coerceAtLeast(0L))
 
         val progressUpdater = launch {
             while (isActive && !pauseFlag.get()) {
-                delay(600)
+                delay(500)
                 val curSpeed = tracker.sampleSpeed()
                 val currentBytes = downloadedAccumulator.get().coerceAtMost(totalSize)
                 downloadDao.updateProgress(entity.id, currentBytes, curSpeed)
@@ -312,7 +569,7 @@ class DownloaderEngine(
                 val endByte = if (index == threads - 1) totalSize - 1 else (startByte + chunkSize - 1)
 
                 async(Dispatchers.IO) {
-                    downloadChunk(
+                    downloadRange(
                         entity.url,
                         tdPartFile,
                         startByte,
@@ -320,7 +577,6 @@ class DownloaderEngine(
                         pauseFlag,
                         tracker,
                         downloadedAccumulator,
-                        settings.bufferSizeBytes,
                         settings
                     )
                 }
@@ -329,17 +585,16 @@ class DownloaderEngine(
             chunkJobs.awaitAll()
 
             if (pauseFlag.get()) {
-                throw CancellationException("Pausado por el usuario")
+                throw CancellationException("Pausado")
             }
 
-            // Sniff actual extension if needed and complete
             finalizeDownload(entity, tdPartFile, finalFile)
         } finally {
             progressUpdater.cancel()
         }
     }
 
-    private fun downloadChunk(
+    private fun downloadRange(
         urlStr: String,
         file: File,
         startByte: Long,
@@ -347,7 +602,6 @@ class DownloaderEngine(
         pauseFlag: AtomicBoolean,
         tracker: SpeedTracker,
         downloadedAccumulator: AtomicLong,
-        bufferSize: Int,
         settings: AppSettings
     ) {
         var connection: HttpURLConnection? = null
@@ -358,7 +612,7 @@ class DownloaderEngine(
             connection = openConnection(urlStr, settings)
             connection.setRequestProperty("Range", "bytes=$startByte-$endByte")
             connection.connectTimeout = 20000
-            connection.readTimeout = 20000
+            connection.readTimeout = 25000
             connection.connect()
 
             val responseCode = connection.responseCode
@@ -370,7 +624,7 @@ class DownloaderEngine(
             raf.seek(startByte)
 
             inputStream = connection.inputStream
-            val buffer = ByteArray(bufferSize.coerceIn(16384, 1048576))
+            val buffer = ByteArray(131072) // 128 KB
             var bytesRead: Int
 
             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
@@ -380,6 +634,8 @@ class DownloaderEngine(
                 raf.write(buffer, 0, bytesRead)
                 tracker.recordBytes(bytesRead.toLong())
                 downloadedAccumulator.addAndGet(bytesRead.toLong())
+
+                applySpeedThrottle(bytesRead, settings.speedLimit)
             }
         } finally {
             try { inputStream?.close() } catch (_: Exception) {}
@@ -403,7 +659,7 @@ class DownloaderEngine(
             connection.setRequestProperty("Range", "bytes=$existingDownloaded-")
         }
         connection.connectTimeout = 20000
-        connection.readTimeout = 20000
+        connection.readTimeout = 25000
         connection.connect()
 
         val responseCode = connection.responseCode
@@ -416,7 +672,7 @@ class DownloaderEngine(
         val downloadedAccumulator = AtomicLong(currentOffset)
         val progressUpdater = launch {
             while (isActive && !pauseFlag.get()) {
-                delay(600)
+                delay(500)
                 val curSpeed = tracker.sampleSpeed()
                 downloadDao.updateProgress(entity.id, downloadedAccumulator.get(), curSpeed)
             }
@@ -424,7 +680,7 @@ class DownloaderEngine(
 
         try {
             val input = connection.inputStream
-            val buffer = ByteArray(settings.bufferSizeBytes.coerceIn(16384, 1048576))
+            val buffer = ByteArray(131072) // 128 KB
             var read: Int
 
             while (input.read(buffer).also { read = it } != -1) {
@@ -434,6 +690,8 @@ class DownloaderEngine(
                 raf.write(buffer, 0, read)
                 tracker.recordBytes(read.toLong())
                 downloadedAccumulator.addAndGet(read.toLong())
+
+                applySpeedThrottle(read, settings.speedLimit)
             }
             input.close()
             raf.close()
@@ -447,10 +705,26 @@ class DownloaderEngine(
         }
     }
 
+    private fun applySpeedThrottle(bytesJustRead: Int, speedLimitSetting: String) {
+        if (speedLimitSetting.isBlank() || speedLimitSetting == "Sin Límite") return
+        val maxBytesPerSec = when (speedLimitSetting) {
+            "1 MB/s" -> 1024L * 1024L
+            "2 MB/s" -> 2L * 1024L * 1024L
+            "5 MB/s" -> 5L * 1024L * 1024L
+            "10 MB/s" -> 10L * 1024L * 1024L
+            "20 MB/s" -> 20L * 1024L * 1024L
+            else -> return
+        }
+        val expectedNanos = (bytesJustRead.toLong() * 1_000_000_000L) / maxBytesPerSec
+        val sleepMillis = expectedNanos / 1_000_000L
+        if (sleepMillis > 2) {
+            try { Thread.sleep(sleepMillis) } catch (_: Exception) {}
+        }
+    }
+
     private suspend fun finalizeDownload(entity: DownloadEntity, tdPartFile: File, finalFile: File) {
         if (!tdPartFile.exists()) return
 
-        // Check if filename has extension, otherwise sniff magic bytes
         var targetFile = finalFile
         if (!targetFile.name.contains(".")) {
             val detectedExt = sniffExtension(tdPartFile)
@@ -462,7 +736,16 @@ class DownloaderEngine(
         if (targetFile.exists()) targetFile.delete()
         tdPartFile.renameTo(targetFile)
 
-        // Update database with final path and complete
+        // Broadcast to Android MediaStore so file appears in gallery/downloads immediately
+        try {
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(targetFile.absolutePath),
+                null,
+                null
+            )
+        } catch (_: Exception) {}
+
         val updated = entity.copy(
             fileName = targetFile.name,
             filePath = targetFile.absolutePath,
@@ -483,12 +766,8 @@ class DownloaderEngine(
             val headerStr = String(header, Charsets.ISO_8859_1)
 
             when {
-                // ZIP / APK: starts with PK\x03\x04
-                header[0] == 0x50.toByte() && header[1] == 0x4B.toByte() -> {
-                    // Check if contains AndroidManifest or dex
-                    "apk" // In toDus, most zipped binaries are APKs
-                }
-                // MP4 / MOV: contains ftyp
+                // ZIP / APK: PK\x03\x04
+                header[0] == 0x50.toByte() && header[1] == 0x4B.toByte() -> "apk"
                 headerStr.contains("ftyp") -> {
                     when {
                         headerStr.contains("M4A") -> "m4a"
@@ -497,13 +776,9 @@ class DownloaderEngine(
                         else -> "mp4"
                     }
                 }
-                // MP3: starts with ID3 or sync frame
                 headerStr.startsWith("ID3") || (header[0] == 0xFF.toByte() && (header[1].toInt() and 0xE0) == 0xE0) -> "mp3"
-                // OGG: starts with OggS
                 headerStr.startsWith("OggS") -> "ogg"
-                // FLAC: starts with fLaC
                 headerStr.startsWith("fLaC") -> "flac"
-                // RIFF (AVI / WAV / WEBP)
                 headerStr.startsWith("RIFF") -> {
                     when {
                         headerStr.contains("AVI ") -> "avi"
@@ -512,19 +787,12 @@ class DownloaderEngine(
                         else -> "avi"
                     }
                 }
-                // Matroska MKV: \x1A\x45\xDF\xA3
                 header[0] == 0x1A.toByte() && header[1] == 0x45.toByte() -> "mkv"
-                // JPEG: \xFF\xD8\xFF
                 header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() -> "jpg"
-                // PNG: \x89PNG
                 header[0] == 0x89.toByte() && header[1] == 0x50.toByte() && header[2] == 0x4E.toByte() -> "png"
-                // GIF: GIF8
                 headerStr.startsWith("GIF8") -> "gif"
-                // PDF: %PDF
                 headerStr.startsWith("%PDF") -> "pdf"
-                // RAR: Rar!
                 headerStr.startsWith("Rar!") -> "rar"
-                // 7z: 7z\xBC\xAF\x27\x1C
                 header[0] == 0x37.toByte() && header[1] == 0x7A.toByte() -> "7z"
                 else -> "bin"
             }
@@ -566,9 +834,9 @@ class DownloaderEngine(
         val url = URL(urlStr)
         val connection = if (settings?.proxyEnabled == true && settings.proxyHost.isNotBlank()) {
             try {
-                val proxy = java.net.Proxy(
-                    java.net.Proxy.Type.HTTP,
-                    java.net.InetSocketAddress(settings.proxyHost, settings.proxyPort)
+                val proxy = Proxy(
+                    Proxy.Type.HTTP,
+                    InetSocketAddress(settings.proxyHost, settings.proxyPort)
                 )
                 url.openConnection(proxy) as HttpURLConnection
             } catch (_: Exception) {
@@ -578,8 +846,24 @@ class DownloaderEngine(
             url.openConnection() as HttpURLConnection
         }
 
-        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; toDus Download) AppleWebKit/537.36")
+        // Exact User-Agent and Headers matching reference app:
+        val lowerUrl = urlStr.lowercase()
+        if (lowerUrl.contains("todus.cu") || lowerUrl.contains("todus") || lowerUrl.contains("152.207.206.86")) {
+            connection.setRequestProperty("User-Agent", "Wget/1.21.3")
+            connection.setRequestProperty("Host", "s3.todus.cu")
+        } else if (lowerUrl.contains("nube.uo.edu.cu") || lowerUrl.contains("nextcloud")) {
+            connection.setRequestProperty("User-Agent", "NextcloudDirectClient/1.0")
+            connection.setRequestProperty("OCS-APIRequest", "true")
+        } else {
+            connection.setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
+        }
+
+        connection.setRequestProperty("Accept", "*/*")
         connection.setRequestProperty("Accept-Encoding", "identity")
+        connection.setRequestProperty("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
         connection.setRequestProperty("Connection", "keep-alive")
 
         if (connection is HttpsURLConnection) {

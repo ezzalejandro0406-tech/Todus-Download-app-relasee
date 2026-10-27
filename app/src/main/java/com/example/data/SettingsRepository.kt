@@ -50,26 +50,58 @@ class SettingsRepository(context: Context) {
                 isLinked = true,
                 fullName = prefs.getString("user_full_name", "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ") ?: "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
                 username = prefs.getString("user_username", "@jakudoshy") ?: "@jakudoshy",
-                telegramId = prefs.getString("user_telegram_id", "ID: 618492041") ?: "ID: 618492041",
+                telegramId = prefs.getString("user_telegram_id", "7935796405") ?: "7935796405",
                 photoUrl = prefs.getString("user_photo_url", null),
-                accountStatus = prefs.getString("user_account_status", "Verificado VIP · Activo") ?: "Verificado VIP · Activo",
+                accountStatus = prefs.getString("user_account_status", "Suscripción Activa") ?: "Suscripción Activa",
                 balance = prefs.getString("user_balance", "$ 150.00 CUP") ?: "$ 150.00 CUP",
-                quotaPlan = prefs.getString("user_quota_plan", "Plan Premium Ultra (Sin Límite)") ?: "Plan Premium Ultra (Sin Límite)",
+                quotaPlan = prefs.getString("user_quota_plan", "Plan Free") ?: "Plan Free",
                 linkCode = savedCode,
-                linkedDate = prefs.getString("user_linked_date", "26 Oct 2026") ?: "26 Oct 2026"
+                linkedDate = prefs.getString("user_linked_date", "26 Oct 2026") ?: "26 Oct 2026",
+                planName = prefs.getString("user_plan_name", "PLAN FREE") ?: "PLAN FREE",
+                planStatus = prefs.getString("user_plan_status", "Suscripción Activa") ?: "Suscripción Activa",
+                planExpiration = prefs.getString("user_plan_exp", "Sin caducidad (Permanente)") ?: "Sin caducidad (Permanente)",
+                role = prefs.getString("user_role", "Usuario Estándar") ?: "Usuario Estándar",
+                phone = prefs.getString("user_phone", "No especificado") ?: "No especificado",
+                lastActivity = prefs.getString("user_last_act", "Hace un momento") ?: "Hace un momento",
+                trafficUsedGb = prefs.getFloat("user_traffic_used", 0.22f).toDouble(),
+                trafficTotalGb = prefs.getFloat("user_traffic_total", 1.00f).toDouble(),
+                cloudUsedGb = prefs.getFloat("user_cloud_used", 0.01f).toDouble(),
+                cloudTotalGb = prefs.getFloat("user_cloud_total", 1.00f).toDouble(),
+                cloudFilesCount = prefs.getInt("user_cloud_files", 6),
+                activeDevices = prefs.getInt("user_active_devices", 1),
+                maxDevices = prefs.getInt("user_max_devices", 2),
+                uploadStrategy = prefs.getString("user_upload_strat", "Directo") ?: "Directo",
+                partSizeMb = prefs.getInt("user_part_size", 2),
+                autoUpload = prefs.getBoolean("user_auto_upload", true)
             )
         } else {
             UserProfile(
                 isLinked = false,
                 fullName = "Modo Invitado",
                 username = "",
-                telegramId = "No Vinculado",
+                telegramId = "",
                 photoUrl = null,
                 accountStatus = "Modo Invitado",
                 balance = "$ 0.00 CUP",
                 quotaPlan = "Plan Estándar",
                 linkCode = savedCode,
-                linkedDate = ""
+                linkedDate = "",
+                planName = "PLAN FREE",
+                planStatus = "No Vinculado",
+                planExpiration = "Sin caducidad",
+                role = "Invitado",
+                phone = "No especificado",
+                lastActivity = "Hace un momento",
+                trafficUsedGb = 0.0,
+                trafficTotalGb = 1.0,
+                cloudUsedGb = 0.0,
+                cloudTotalGb = 1.0,
+                cloudFilesCount = 0,
+                activeDevices = 0,
+                maxDevices = 2,
+                uploadStrategy = "Directo",
+                partSizeMb = 2,
+                autoUpload = true
             )
         }
     }
@@ -107,6 +139,22 @@ class SettingsRepository(context: Context) {
             putString("user_quota_plan", profile.quotaPlan)
             putString("user_link_code", profile.linkCode)
             putString("user_linked_date", profile.linkedDate)
+            putString("user_plan_name", profile.planName)
+            putString("user_plan_status", profile.planStatus)
+            putString("user_plan_exp", profile.planExpiration)
+            putString("user_role", profile.role)
+            putString("user_phone", profile.phone)
+            putString("user_last_act", profile.lastActivity)
+            putFloat("user_traffic_used", profile.trafficUsedGb.toFloat())
+            putFloat("user_traffic_total", profile.trafficTotalGb.toFloat())
+            putFloat("user_cloud_used", profile.cloudUsedGb.toFloat())
+            putFloat("user_cloud_total", profile.cloudTotalGb.toFloat())
+            putInt("user_cloud_files", profile.cloudFilesCount)
+            putInt("user_active_devices", profile.activeDevices)
+            putInt("user_max_devices", profile.maxDevices)
+            putString("user_upload_strat", profile.uploadStrategy)
+            putInt("user_part_size", profile.partSizeMb)
+            putBoolean("user_auto_upload", profile.autoUpload)
             apply()
         }
         _userProfile.value = profile
@@ -118,38 +166,70 @@ class SettingsRepository(context: Context) {
             isLinked = false,
             fullName = "Modo Invitado",
             username = "",
-            telegramId = "No Vinculado",
+            telegramId = "",
             photoUrl = null,
             accountStatus = "Modo Invitado",
             balance = "$ 0.00 CUP",
             quotaPlan = "Plan Estándar",
             linkCode = newCode,
-            linkedDate = ""
+            linkedDate = "",
+            planName = "PLAN FREE",
+            planStatus = "No Vinculado",
+            planExpiration = "Sin caducidad",
+            role = "Invitado",
+            phone = "No especificado",
+            lastActivity = "Hace un momento",
+            trafficUsedGb = 0.0,
+            trafficTotalGb = 1.0,
+            cloudUsedGb = 0.0,
+            cloudTotalGb = 1.0,
+            cloudFilesCount = 0,
+            activeDevices = 0,
+            maxDevices = 2,
+            uploadStrategy = "Directo",
+            partSizeMb = 2,
+            autoUpload = true
         )
         updateProfile(guest)
     }
 
     fun linkTelegram(
-        fullName: String = "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
-        username: String = "@jakudoshy",
-        telegramId: String = "618492041",
+        fullName: String = "JAKUDOSHYꫂOfc",
+        username: String = "@Jakudoshy",
+        telegramId: String = "7935796405",
         photoUrl: String? = null,
         balance: String = "$ 150.00 CUP",
-        quotaPlan: String = "Plan Premium Ultra (Sin Límite)"
+        quotaPlan: String = "PLAN FREE"
     ) {
         val curCode = _userProfile.value.linkCode
         val cleanUser = if (username.startsWith("@") || username.isBlank()) username else "@$username"
         val linked = UserProfile(
             isLinked = true,
-            fullName = fullName.ifBlank { "ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ" },
-            username = cleanUser.ifBlank { "@jakudoshy" },
-            telegramId = if (telegramId.startsWith("ID:")) telegramId else "ID: $telegramId",
+            fullName = fullName.ifBlank { "JAKUDOSHYꫂOfc" },
+            username = cleanUser.ifBlank { "@Jakudoshy" },
+            telegramId = telegramId.ifBlank { "7935796405" },
             photoUrl = photoUrl,
-            accountStatus = "Verificado VIP · Activo",
+            accountStatus = "Suscripción Activa",
             balance = balance,
             quotaPlan = quotaPlan,
             linkCode = curCode,
-            linkedDate = "26 Oct 2026"
+            linkedDate = "26 Oct 2026",
+            planName = "PLAN FREE",
+            planStatus = "Suscripción Activa",
+            planExpiration = "Sin caducidad (Permanente)",
+            role = "Usuario Estándar",
+            phone = "No especificado",
+            lastActivity = "Hace un momento",
+            trafficUsedGb = 0.22,
+            trafficTotalGb = 1.00,
+            cloudUsedGb = 0.01,
+            cloudTotalGb = 1.00,
+            cloudFilesCount = 6,
+            activeDevices = 1,
+            maxDevices = 2,
+            uploadStrategy = "Directo",
+            partSizeMb = 2,
+            autoUpload = true
         )
         updateProfile(linked)
     }

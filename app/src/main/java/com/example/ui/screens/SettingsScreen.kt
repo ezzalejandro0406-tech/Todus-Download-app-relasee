@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,8 +24,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ColorLens
@@ -34,12 +32,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -49,18 +47,18 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,12 +72,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.model.AppSettings
-import com.example.ui.components.NeonCard
+import com.example.model.DownloadEntity
+import com.example.ui.DownloadViewModel
 import com.example.ui.theme.AccentSwatches
+import com.example.ui.theme.NeonRed
 import com.example.ui.theme.StatusCyan
 import com.example.ui.theme.StatusGreen
-import com.example.ui.theme.StatusRed
 import com.example.ui.theme.TextDarkGray
 import com.example.ui.theme.TextGray
 import com.example.ui.theme.TextWhite
@@ -88,11 +88,11 @@ import com.example.ui.theme.UdyatDarkCardBorder
 import com.example.ui.theme.UdyatDarkSurface
 import com.example.ui.theme.UdyatDarkSurfaceVariant
 import java.io.File
-import java.text.DecimalFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    viewModel: DownloadViewModel,
     settings: AppSettings,
     onSaveSettings: (AppSettings) -> Unit,
     onBack: () -> Unit,
@@ -100,9 +100,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
 
-    var themeMode by remember(settings.themeMode) { mutableStateOf(settings.themeMode) }
     var selectedAccentIndex by remember(settings.accentColorIndex) { mutableIntStateOf(settings.accentColorIndex) }
-
     var maxConcurrent by remember(settings.maxConcurrentDownloads) { mutableIntStateOf(settings.maxConcurrentDownloads) }
     var maxThreads by remember(settings.maxThreads) { mutableIntStateOf(settings.maxThreads) }
     var autoReconnect by remember(settings.autoReconnect) { mutableStateOf(settings.autoReconnect) }
@@ -110,18 +108,33 @@ fun SettingsScreen(
     var speedLimit by remember(settings.speedLimit) { mutableStateOf(settings.speedLimit) }
     var subfolder by remember(settings.downloadSubfolder) { mutableStateOf(settings.downloadSubfolder) }
     var proxyEnabled by remember(settings.proxyEnabled) { mutableStateOf(settings.proxyEnabled) }
+    var proxyHost by remember(settings.proxyHost) { mutableStateOf(settings.proxyHost) }
+    var proxyPortStr by remember(settings.proxyPort) { mutableStateOf(settings.proxyPort.toString()) }
 
     var speedMenuExpanded by remember { mutableStateOf(false) }
 
-    // Optimization metrics
-    var dbSizeStr by remember { mutableStateOf("192.66 KB") }
+    // Optimization metrics & dialog states
+    var dbSizeStr by remember { mutableStateOf("84.00 KB") }
     var downloadFolderSizeStr by remember { mutableStateOf("43.82 MB") }
+    var showEmptyFolderDialog by remember { mutableStateOf(false) }
+    var showCleanOrphansDialog by remember { mutableStateOf(false) }
+    var topBannerMessage by remember { mutableStateOf<String?>(null) }
+
+    fun refreshMetrics() {
+        val (db, folder) = viewModel.getStorageMetrics()
+        dbSizeStr = db
+        downloadFolderSizeStr = folder
+    }
+
+    LaunchedEffect(Unit) {
+        refreshMetrics()
+    }
 
     val activeAccentColor = AccentSwatches.getOrElse(selectedAccentIndex) { AccentSwatches[0] }
 
-    fun buildCurrentSettings(): AppSettings {
-        return settings.copy(
-            themeMode = themeMode,
+    fun saveCurrent() {
+        val port = proxyPortStr.toIntOrNull() ?: 8080
+        val updated = settings.copy(
             accentColorIndex = selectedAccentIndex,
             maxConcurrentDownloads = maxConcurrent,
             maxThreads = maxThreads,
@@ -129,8 +142,12 @@ fun SettingsScreen(
             maxReconnectAttempts = maxReconnectAttempts,
             speedLimit = speedLimit,
             downloadSubfolder = subfolder.ifBlank { "JKDOWN" },
-            proxyEnabled = proxyEnabled
+            proxyEnabled = proxyEnabled,
+            proxyHost = proxyHost.trim(),
+            proxyPort = port
         )
+        onSaveSettings(updated)
+        topBannerMessage = "Ajustes guardados correctamente"
     }
 
     Column(
@@ -138,235 +155,135 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(UdyatDarkBackground)
     ) {
-        // Top bar matching Screenshot 11: (<) Ajustes (✓)
+        // Top bar matching Screenshots 3, 11: (<) Ajustes (✓)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             IconButton(
                 onClick = onBack,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
-                    .background(UdyatDarkSurfaceVariant)
+                    .background(UdyatDarkSurface)
+                    .border(1.dp, UdyatDarkCardBorder, CircleShape)
             ) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Volver",
                     tint = TextWhite,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
 
             Text(
                 text = "Ajustes",
-                fontSize = 18.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextWhite
             )
 
-            // Circular Green checkmark button (Screenshot 11)
             IconButton(
-                onClick = {
-                    val s = buildCurrentSettings()
-                    onSaveSettings(s)
-                    onBack()
-                },
+                onClick = { saveCurrent() },
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
-                    .border(1.dp, StatusGreen.copy(alpha = 0.6f), CircleShape)
-                    .background(Color(0xFF132F20))
+                    .background(StatusGreen.copy(alpha = 0.2f))
+                    .border(1.dp, StatusGreen, CircleShape)
                     .testTag("save_settings_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Guardar",
                     tint = StatusGreen,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
+            }
+        }
+
+        // Green Success Banner if triggered
+        if (topBannerMessage != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF132A1E))
+                    .border(1.dp, StatusGreen, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = StatusGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = topBannerMessage!!,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextWhite,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "✕",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextGray,
+                        modifier = Modifier.clickable { topBannerMessage = null }
+                    )
+                }
             }
         }
 
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .testTag("settings_screen_list"),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Card 1: Tema y Color de Acento (Screenshot 11)
+            item { Spacer(modifier = Modifier.height(4.dp)) }
+
+            // Card 1: Descargas Simultáneas & Hilos (Screenshots 3, 11)
             item {
-                NeonCard(modifier = Modifier.fillMaxWidth(), containerColor = UdyatDarkSurface) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(activeAccentColor.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Nightlight,
-                                    contentDescription = null,
-                                    tint = activeAccentColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Tema de la interfaz",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextWhite
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Segmented Control: [ Sistema | Claro | Oscuro ]
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(UdyatDarkSurfaceVariant)
-                                .padding(4.dp)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = UdyatDarkSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                listOf("Sistema", "Claro", "Oscuro").forEach { mode ->
-                                    val isSelected = themeMode == mode
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSelected) activeAccentColor.copy(alpha = 0.25f) else Color.Transparent)
-                                            .border(
-                                                width = if (isSelected) 1.dp else 0.dp,
-                                                color = if (isSelected) activeAccentColor else Color.Transparent,
-                                                shape = RoundedCornerShape(8.dp)
-                                            )
-                                            .clickable { themeMode = mode }
-                                            .padding(vertical = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = mode,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) TextWhite else TextGray
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(activeAccentColor.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ColorLens,
-                                    contentDescription = null,
-                                    tint = activeAccentColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "Color de acento",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
+                                text = "Descargas simultáneas",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = TextWhite
                             )
+                            Text(
+                                text = "$maxConcurrent",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = activeAccentColor
+                            )
                         }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // 24 Swatches Grid (Screenshot 11)
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AccentSwatches.chunked(6).forEachIndexed { rowIndex, rowColors ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    rowColors.forEachIndexed { colIndex, swatchColor ->
-                                        val actualIndex = rowIndex * 6 + colIndex
-                                        val isSelected = selectedAccentIndex == actualIndex
-                                        Box(
-                                            modifier = Modifier
-                                                .size(42.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(swatchColor)
-                                                .clickable { selectedAccentIndex = actualIndex },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isSelected) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(24.dp)
-                                                        .clip(CircleShape)
-                                                        .border(1.5.dp, TextWhite, CircleShape),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Check,
-                                                        contentDescription = null,
-                                                        tint = TextWhite,
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Section Header: DESCARGAS Y CONCURRENCIA (Screenshot 7)
-            item {
-                Text(
-                    text = "DESCARGAS Y CONCURRENCIA",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextGray,
-                    modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-                )
-            }
-
-            // Card 2: Descargas y Concurrencia (Screenshot 7 & 10)
-            item {
-                NeonCard(modifier = Modifier.fillMaxWidth(), containerColor = UdyatDarkSurface) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        // 1. Descargas simultáneas
-                        StepperRow(
-                            title = "Descargas simultáneas",
-                            subtitle = "Archivos procesados a la vez",
-                            value = maxConcurrent,
-                            onDecrement = { if (maxConcurrent > 1) maxConcurrent-- },
-                            onIncrement = { if (maxConcurrent < 5) maxConcurrent++ },
-                            accentColor = activeAccentColor
-                        )
 
                         Slider(
                             value = maxConcurrent.toFloat(),
                             onValueChange = { maxConcurrent = it.toInt() },
-                            valueRange = 1f..5f,
-                            steps = 3,
+                            valueRange = 1f..10f,
+                            steps = 8,
                             colors = SliderDefaults.colors(
-                                thumbColor = TextWhite,
+                                thumbColor = Color.White,
                                 activeTrackColor = activeAccentColor,
                                 inactiveTrackColor = UdyatDarkSurfaceVariant
                             )
@@ -374,39 +291,53 @@ fun SettingsScreen(
 
                         HorizontalDivider(
                             color = UdyatDarkCardBorder,
-                            thickness = 0.5.dp,
-                            modifier = Modifier.padding(vertical = 12.dp)
+                            thickness = 0.8.dp,
+                            modifier = Modifier.padding(vertical = 8.dp)
                         )
 
-                        // 2. Hilos por descarga
-                        StepperRow(
-                            title = "Hilos por descarga",
-                            subtitle = "Conexiones Range concurrentes por archivo",
-                            value = maxThreads,
-                            onDecrement = { if (maxThreads > 1) maxThreads-- },
-                            onIncrement = { if (maxThreads < 32) maxThreads++ },
-                            accentColor = activeAccentColor
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Hilos por descarga",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextWhite
+                            )
+                            Text(
+                                text = "$maxThreads",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = activeAccentColor
+                            )
+                        }
 
                         Slider(
                             value = maxThreads.toFloat(),
                             onValueChange = { maxThreads = it.toInt() },
-                            valueRange = 1f..32f,
-                            steps = 30,
+                            valueRange = 1f..16f,
+                            steps = 14,
                             colors = SliderDefaults.colors(
-                                thumbColor = TextWhite,
+                                thumbColor = Color.White,
                                 activeTrackColor = activeAccentColor,
                                 inactiveTrackColor = UdyatDarkSurfaceVariant
                             )
                         )
+                    }
+                }
+            }
 
-                        HorizontalDivider(
-                            color = UdyatDarkCardBorder,
-                            thickness = 0.5.dp,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
-
-                        // 3. Reintento automático
+            // Card 2: Reintento Automático & Máximo Reintentos (Screenshots 3, 11)
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = UdyatDarkSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -415,13 +346,13 @@ fun SettingsScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Reintento automático",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = TextWhite
                                 )
                                 Text(
                                     text = "Reintentar descargas si falla la red",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     color = TextGray
                                 )
                             }
@@ -429,9 +360,9 @@ fun SettingsScreen(
                                 checked = autoReconnect,
                                 onCheckedChange = { autoReconnect = it },
                                 colors = SwitchDefaults.colors(
-                                    checkedThumbColor = TextWhite,
+                                    checkedThumbColor = Color.White,
                                     checkedTrackColor = activeAccentColor,
-                                    uncheckedThumbColor = TextDarkGray,
+                                    uncheckedThumbColor = TextGray,
                                     uncheckedTrackColor = UdyatDarkSurfaceVariant
                                 )
                             )
@@ -439,39 +370,76 @@ fun SettingsScreen(
 
                         HorizontalDivider(
                             color = UdyatDarkCardBorder,
-                            thickness = 0.5.dp,
-                            modifier = Modifier.padding(vertical = 12.dp)
+                            thickness = 0.8.dp,
+                            modifier = Modifier.padding(vertical = 10.dp)
                         )
 
-                        // 4. Máximo de reintentos
-                        StepperRow(
-                            title = "Máximo de reintentos",
-                            subtitle = "Intentos automáticos antes de marcar error",
-                            value = maxReconnectAttempts,
-                            onDecrement = { if (maxReconnectAttempts > 1) maxReconnectAttempts-- },
-                            onIncrement = { if (maxReconnectAttempts < 10) maxReconnectAttempts++ },
-                            accentColor = activeAccentColor
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Máximo de reintentos",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextWhite
+                                )
+                                Text(
+                                    text = "Intentos automáticos antes de marcar error",
+                                    fontSize = 11.sp,
+                                    color = TextGray
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(UdyatDarkSurfaceVariant)
+                                    .border(1.dp, UdyatDarkCardBorder, RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "—",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextWhite,
+                                    modifier = Modifier
+                                        .clickable { if (maxReconnectAttempts > 1) maxReconnectAttempts-- }
+                                        .padding(horizontal = 8.dp)
+                                )
+                                Text(
+                                    text = "$maxReconnectAttempts",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = activeAccentColor,
+                                    modifier = Modifier.padding(horizontal = 6.dp)
+                                )
+                                Text(
+                                    text = "+",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextWhite,
+                                    modifier = Modifier
+                                        .clickable { if (maxReconnectAttempts < 20) maxReconnectAttempts++ }
+                                        .padding(horizontal = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
-                        Slider(
-                            value = maxReconnectAttempts.toFloat(),
-                            onValueChange = { maxReconnectAttempts = it.toInt() },
-                            valueRange = 1f..10f,
-                            steps = 8,
-                            colors = SliderDefaults.colors(
-                                thumbColor = TextWhite,
-                                activeTrackColor = activeAccentColor,
-                                inactiveTrackColor = UdyatDarkSurfaceVariant
-                            )
-                        )
-
-                        HorizontalDivider(
-                            color = UdyatDarkCardBorder,
-                            thickness = 0.5.dp,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
-
-                        // 5. Límite de velocidad
+            // Card 3: Límite de Velocidad & Subcarpeta (Screenshots 3, 12)
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = UdyatDarkSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -480,47 +448,47 @@ fun SettingsScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Límite de velocidad",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = TextWhite
                                 )
                                 Text(
                                     text = "Velocidad máxima combinada",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     color = TextGray
                                 )
                             }
 
                             Box {
-                                Row(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { speedMenuExpanded = true }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                OutlinedButton(
+                                    onClick = { speedMenuExpanded = true },
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, activeAccentColor),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = activeAccentColor)
                                 ) {
                                     Text(
                                         text = speedLimit,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = activeAccentColor
-                                    )
-                                    Text(
-                                        text = " ▼",
-                                        fontSize = 10.sp,
-                                        color = activeAccentColor
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
 
                                 DropdownMenu(
                                     expanded = speedMenuExpanded,
-                                    onDismissRequest = { speedMenuExpanded = false }
+                                    onDismissRequest = { speedMenuExpanded = false },
+                                    modifier = Modifier.background(UdyatDarkSurfaceVariant)
                                 ) {
-                                    listOf("Sin Límite", "500 KB/s", "1 MB/s", "2 MB/s", "5 MB/s").forEach { opt ->
+                                    listOf("Sin Límite", "1 MB/s", "2 MB/s", "5 MB/s", "10 MB/s", "20 MB/s").forEach { limit ->
                                         DropdownMenuItem(
-                                            text = { Text(opt) },
+                                            text = {
+                                                Text(
+                                                    text = limit,
+                                                    color = if (speedLimit == limit) activeAccentColor else TextWhite,
+                                                    fontSize = 12.sp
+                                                )
+                                            },
                                             onClick = {
-                                                speedLimit = opt
+                                                speedLimit = limit
                                                 speedMenuExpanded = false
                                             }
                                         )
@@ -531,26 +499,27 @@ fun SettingsScreen(
 
                         HorizontalDivider(
                             color = UdyatDarkCardBorder,
-                            thickness = 0.5.dp,
-                            modifier = Modifier.padding(vertical = 12.dp)
+                            thickness = 0.8.dp,
+                            modifier = Modifier.padding(vertical = 10.dp)
                         )
 
-                        // 6. Subcarpeta de descargas (Screenshot 10)
                         Text(
                             text = "Subcarpeta de descargas",
-                            fontSize = 11.sp,
-                            color = TextGray
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextWhite
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedTextField(
                             value = subfolder,
                             onValueChange = { subfolder = it },
+                            placeholder = { Text("JKDOWN", color = TextDarkGray, fontSize = 12.sp) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Folder,
                                     contentDescription = null,
-                                    tint = TextGray,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = TextDarkGray,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             },
                             colors = OutlinedTextFieldDefaults.colors(
@@ -565,56 +534,119 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
+                    }
+                }
+            }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+            // Card 4: Configuración de Proxy (Screenshot 4)
+            item {
+                Text(
+                    text = "CONFIGURACIÓN DE PROXY",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextGray,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
 
-                        // 7. Directorio base personalizado (Screenshot 10)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = UdyatDarkSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(UdyatDarkSurfaceVariant)
-                                    .border(1.dp, UdyatDarkCardBorder, RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Habilitar Proxy",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextWhite
+                                )
+                                Text(
+                                    text = "Enrutar tráfico a través de un proxy local o remoto",
+                                    fontSize = 11.sp,
+                                    color = TextGray
+                                )
+                            }
+                            Switch(
+                                checked = proxyEnabled,
+                                onCheckedChange = { proxyEnabled = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = activeAccentColor,
+                                    uncheckedThumbColor = TextGray,
+                                    uncheckedTrackColor = UdyatDarkSurfaceVariant
+                                )
+                            )
+                        }
+
+                        if (proxyEnabled) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.FolderOpen,
-                                        contentDescription = null,
-                                        tint = TextGray,
-                                        modifier = Modifier.size(18.dp)
+                                OutlinedTextField(
+                                    value = proxyHost,
+                                    onValueChange = { proxyHost = it },
+                                    placeholder = { Text("Host del Proxy", color = TextDarkGray, fontSize = 12.sp) },
+                                    modifier = Modifier.weight(2f),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = activeAccentColor,
+                                        unfocusedBorderColor = UdyatDarkCardBorder,
+                                        focusedTextColor = TextWhite,
+                                        unfocusedTextColor = TextWhite,
+                                        focusedContainerColor = UdyatDarkSurfaceVariant,
+                                        unfocusedContainerColor = UdyatDarkSurfaceVariant
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Directorio base persona...",
-                                        fontSize = 13.sp,
-                                        color = TextDarkGray
+                                )
+                                OutlinedTextField(
+                                    value = proxyPortStr,
+                                    onValueChange = { proxyPortStr = it },
+                                    placeholder = { Text("Puerto", color = TextDarkGray, fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = activeAccentColor,
+                                        unfocusedBorderColor = UdyatDarkCardBorder,
+                                        focusedTextColor = TextWhite,
+                                        unfocusedTextColor = TextWhite,
+                                        focusedContainerColor = UdyatDarkSurfaceVariant,
+                                        unfocusedContainerColor = UdyatDarkSurfaceVariant
                                     )
-                                }
+                                )
                             }
 
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
 
-                            Box(
-                                modifier = Modifier
-                                    .size(46.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(UdyatDarkSurfaceVariant)
-                                    .border(1.dp, UdyatDarkCardBorder, RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        Toast.makeText(context, "Directorio: /Download/$subfolder", Toast.LENGTH_SHORT).show()
-                                    },
-                                contentAlignment = Alignment.Center
+                            OutlinedButton(
+                                onClick = {
+                                    Toast.makeText(context, "Proxy verificado correctamente", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, activeAccentColor)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Folder,
+                                    imageVector = Icons.Default.Wifi,
                                     contentDescription = null,
-                                    tint = TextWhite,
-                                    modifier = Modifier.size(20.dp)
+                                    tint = activeAccentColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "PROBAR CONEXIÓN PROXY",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = activeAccentColor
                                 )
                             }
                         }
@@ -622,61 +654,12 @@ fun SettingsScreen(
                 }
             }
 
-            // Section Header: CONFIGURACIÓN DE PROXY (Screenshot 10)
-            item {
-                Text(
-                    text = "CONFIGURACIÓN DE PROXY",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextGray,
-                    modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-                )
-            }
-
-            // Card 3: Proxy (Screenshot 10)
-            item {
-                NeonCard(modifier = Modifier.fillMaxWidth(), containerColor = UdyatDarkSurface) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Habilitar Proxy",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextWhite
-                            )
-                            Text(
-                                text = "Enrutar tráfico a través de un proxy local o remoto",
-                                fontSize = 12.sp,
-                                color = TextGray
-                            )
-                        }
-
-                        Switch(
-                            checked = proxyEnabled,
-                            onCheckedChange = { proxyEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = TextWhite,
-                                checkedTrackColor = activeAccentColor,
-                                uncheckedThumbColor = TextDarkGray,
-                                uncheckedTrackColor = UdyatDarkSurfaceVariant
-                            )
-                        )
-                    }
-                }
-            }
-
-            // Section Header: ALMACENAMIENTO Y OPTIMIZACIÓN (Screenshot 10)
+            // Card 5: Almacenamiento y Optimización (Screenshots 4, 5)
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -689,170 +672,257 @@ fun SettingsScreen(
 
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                dbSizeStr = "194.20 KB"
-                                Toast.makeText(context, "Métricas actualizadas", Toast.LENGTH_SHORT).show()
-                            }
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(UdyatDarkSurfaceVariant)
+                            .clickable { refreshMetrics() }
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = TextGray,
-                            modifier = Modifier.size(14.dp)
+                            contentDescription = "Actualizar",
+                            tint = TextWhite,
+                            modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "ACTUALIZAR",
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TextGray
+                            color = TextWhite
                         )
                     }
                 }
-            }
 
-            // Card 4: Almacenamiento (Screenshot 10)
-            item {
-                NeonCard(modifier = Modifier.fillMaxWidth(), containerColor = UdyatDarkSurface) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = UdyatDarkSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        // SQLite DB Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Base de Datos SQLite",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextWhite
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF263238)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Storage,
+                                        contentDescription = null,
+                                        tint = Color(0xFF81D4FA),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Base de Datos SQLite",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextWhite
+                                )
+                            }
                             Text(
                                 text = dbSizeStr,
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = StatusCyan
+                                color = Color(0xFF81D4FA)
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(
+                            color = UdyatDarkCardBorder,
+                            thickness = 0.8.dp,
+                            modifier = Modifier.padding(vertical = 10.dp)
+                        )
 
+                        // Downloads Folder Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Carpeta de Descargas",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextWhite
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF1B3A24)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = StatusGreen,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Carpeta de Descargas",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextWhite
+                                )
+                            }
                             Text(
                                 text = downloadFolderSizeStr,
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = StatusGreen
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                        // 3 Action Pills side by side: COMPACTAR BD, HUÉRFANOS, VACIAR CARPETA
+                        // Three Action Buttons (Screenshot 5)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Green: COMPACTAR BD
-                            Box(
+                            // COMPACTAR BD (Green)
+                            Button(
+                                onClick = {
+                                    viewModel.compactDatabase {
+                                        refreshMetrics()
+                                        topBannerMessage = "Base de datos optimizada: Se compactó el almacenamiento."
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1B4D2E),
+                                    contentColor = StatusGreen
+                                ),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(Color(0xFF133621))
-                                    .border(1.dp, StatusGreen.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-                                    .clickable {
-                                        Toast.makeText(context, "Base de datos SQLite compactada", Toast.LENGTH_SHORT).show()
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
+                                    .height(36.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Build,
-                                        contentDescription = null,
-                                        tint = StatusGreen,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "COMPACTAR BD",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextWhite
-                                    )
-                                }
+                                Text(
+                                    text = "COMPACTAR BD",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black
+                                )
                             }
 
-                            // Cyan: HUÉRFANOS
-                            Box(
+                            // HUÉRFANOS (Blue)
+                            Button(
+                                onClick = { showCleanOrphansDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF153B57),
+                                    contentColor = Color(0xFF40C4FF)
+                                ),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(Color(0xFF102F44))
-                                    .border(1.dp, Color(0xFF29B6F6).copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-                                    .clickable {
-                                        Toast.makeText(context, "No se encontraron archivos huérfanos", Toast.LENGTH_SHORT).show()
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
+                                    .height(36.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = null,
-                                        tint = Color(0xFF29B6F6),
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "HUÉRFANOS",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextWhite
-                                    )
-                                }
+                                Text(
+                                    text = "HUÉRFANOS",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black
+                                )
                             }
 
-                            // Red: VACIAR CARPETA
-                            Box(
+                            // VACIAR CARPETA (Red)
+                            Button(
+                                onClick = { showEmptyFolderDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF4D141D),
+                                    contentColor = NeonRed
+                                ),
                                 modifier = Modifier
-                                    .weight(1.1f)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(Color(0xFF3B151A))
-                                    .border(1.dp, StatusRed.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-                                    .clickable {
-                                        Toast.makeText(context, "Carpeta de descargas limpia", Toast.LENGTH_SHORT).show()
-                                        downloadFolderSizeStr = "0.00 B"
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
+                                    .weight(1f)
+                                    .height(36.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = null,
-                                        tint = StatusRed,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "VACIAR CARPETA",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextWhite
-                                    )
+                                Text(
+                                    text = "VACIAR CARPETA",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Card 6: Color Swatches Grid (Screenshots 3, 11)
+            item {
+                Text(
+                    text = "TEMA Y COLOR DE ACENTO",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextGray,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = UdyatDarkSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.ColorLens,
+                                contentDescription = null,
+                                tint = activeAccentColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Paleta de Colores Neón",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextWhite
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Grid of 24 colors
+                        val rows = AccentSwatches.chunked(8)
+                        for (row in rows) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                for (swatch in row) {
+                                    val index = AccentSwatches.indexOf(swatch)
+                                    val isSelected = selectedAccentIndex == index
+                                    Box(
+                                        modifier = Modifier
+                                            .size(30.dp)
+                                            .clip(CircleShape)
+                                            .background(swatch)
+                                            .border(
+                                                width = if (isSelected) 2.5.dp else 0.dp,
+                                                color = if (isSelected) Color.White else Color.Transparent,
+                                                shape = CircleShape
+                                            )
+                                            .clickable { selectedAccentIndex = index },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -860,41 +930,28 @@ fun SettingsScreen(
                 }
             }
 
-            // Card 5: App Card with ACTUALIZADO badge (Screenshot 10)
+            // Footer Branding matching reference app
             item {
-                NeonCard(modifier = Modifier.fillMaxWidth(), containerColor = UdyatDarkSurface) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = UdyatDarkSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder)
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(46.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(activeAccentColor.copy(alpha = 0.15f))
-                                .border(1.dp, activeAccentColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Bolt,
-                                contentDescription = null,
-                                tint = activeAccentColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(14.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column {
                             Text(
                                 text = "JK Downloader",
-                                fontSize = 15.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextWhite
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "Versión 1.1.3 · ᴍᴏᴅ ʙʏ ᴊᴀᴋᴜᴅᴏѕʜʏꫂꤪꤨᴼᶠᶜ",
                                 fontSize = 11.sp,
@@ -902,18 +959,17 @@ fun SettingsScreen(
                             )
                         }
 
-                        // Green ACTUALIZADO badge (Screenshot 10)
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF132F20))
-                                .border(1.dp, StatusGreen.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(StatusGreen.copy(alpha = 0.2f))
+                                .border(1.dp, StatusGreen.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Text(
                                 text = "ACTUALIZADO",
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
                                 color = StatusGreen
                             )
                         }
@@ -921,73 +977,210 @@ fun SettingsScreen(
                 }
             }
 
-            item {
-                Spacer(modifier = Modifier.height(40.dp))
+            item { Spacer(modifier = Modifier.height(20.dp)) }
+        }
+    }
+
+    // ===============================================
+    // DIALOG: Limpiar almacenamiento (Screenshot 4)
+    // ===============================================
+    if (showCleanOrphansDialog) {
+        Dialog(onDismissRequest = { showCleanOrphansDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = UdyatDarkSurface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder),
+                modifier = Modifier.fillMaxWidth(0.96f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = null,
+                            tint = Color(0xFF40C4FF),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Limpiar almacenamiento",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextWhite
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Se buscarán y eliminarán fragmentos incompletos (.udyat_part, .tdpart), checkpoints y archivos temporales huérfanos que ya no pertenezcan a descargas activas, además de compactar la base de datos.",
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = TextGray
+                    )
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Button(
+                        onClick = { showCleanOrphansDialog = false },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = UdyatDarkSurfaceVariant,
+                            contentColor = TextWhite
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                    ) {
+                        Text(
+                            text = "CANCELAR",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            showCleanOrphansDialog = false
+                            viewModel.cleanOrphanFiles { count, freed ->
+                                refreshMetrics()
+                                topBannerMessage = "Almacenamiento limpio: $count archivos huérfanos eliminados (${DownloadEntity.formatBytes(freed)} liberados)."
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonRed,
+                            contentColor = TextWhite
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                    ) {
+                        Text(
+                            text = "LIMPIAR AHORA",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             }
         }
     }
-}
 
-@Composable
-private fun StepperRow(
-    title: String,
-    subtitle: String,
-    value: Int,
-    onDecrement: () -> Unit,
-    onIncrement: () -> Unit,
-    accentColor: Color
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextWhite
-            )
-            Text(
-                text = subtitle,
-                fontSize = 12.sp,
-                color = TextGray
-            )
-        }
-
-        // Stepper: [ - ]   X   [ + ] (Screenshot 7)
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(UdyatDarkSurfaceVariant)
-                .border(1.dp, UdyatDarkCardBorder, RoundedCornerShape(10.dp))
-                .padding(horizontal = 4.dp, vertical = 2.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+    // ===============================================
+    // DIALOG: Vaciar Carpeta de Descargas (Screenshot 3)
+    // ===============================================
+    if (showEmptyFolderDialog) {
+        Dialog(onDismissRequest = { showEmptyFolderDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = UdyatDarkSurface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, UdyatDarkCardBorder),
+                modifier = Modifier.fillMaxWidth(0.96f)
             ) {
-                IconButton(
-                    onClick = onDecrement,
-                    modifier = Modifier.size(32.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
                 ) {
-                    Text("—", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextGray)
-                }
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NeonRed.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = NeonRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
 
-                Text(
-                    text = "$value",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = accentColor,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                IconButton(
-                    onClick = onIncrement,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextGray)
+                    Text(
+                        text = "Vaciar Carpeta de Descargas",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextWhite
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "¿Estás seguro de que deseas eliminar TODOS los archivos guardados en la carpeta de descargas?",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextWhite
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Esta acción borrará permanentemente todos los archivos descargados guardados en la carpeta actual. No se puede deshacer.",
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = TextGray
+                    )
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Button(
+                        onClick = { showEmptyFolderDialog = false },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = UdyatDarkSurfaceVariant,
+                            contentColor = TextWhite
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                    ) {
+                        Text(
+                            text = "CANCELAR",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            showEmptyFolderDialog = false
+                            viewModel.emptyDownloadFolder { count ->
+                                refreshMetrics()
+                                topBannerMessage = "Carpeta vaciada: $count archivos eliminados."
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonRed,
+                            contentColor = TextWhite
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "ELIMINAR TODO",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
         }

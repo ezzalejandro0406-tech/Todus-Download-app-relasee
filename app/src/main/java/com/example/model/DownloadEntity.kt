@@ -21,7 +21,8 @@ data class DownloadEntity(
     val mimeType: String = "",
     val errorMsg: String? = null,
     val retryCount: Int = 0,
-    val reconnectAttempt: Int = 0
+    val reconnectAttempt: Int = 0,
+    val chunksData: String = ""
 ) {
     val progress: Float
         get() = if (fileSize > 0) (downloadedBytes.toFloat() / fileSize.toFloat()).coerceIn(0f, 1f) else 0f
